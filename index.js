@@ -7,6 +7,7 @@ const {
     ActionRowBuilder,
     ButtonBuilder,
     ButtonStyle,
+    StringSelectMenuBuilder,
     ModalBuilder,
     TextInputBuilder,
     TextInputStyle,
@@ -26,6 +27,33 @@ const MEMBER_ROLE_ID = "1479586030058471530";
 
 const COIN = "<:Coins:1480262838323773625>";
 const DATA_FILE = "coffer.json";
+
+const ACTIVITY_MAP = {
+    "ToA": { type: "PvM", roleId: "1479613378333905120" },
+    "CoX": { type: "PvM", roleId: "1479613406725279920" },
+    "ToB": { type: "PvM", roleId: "1479613429844279371" },
+    "Nex": { type: "PvM", roleId: "1479613451751129148" },
+    "Royal Titans": { type: "PvM", roleId: "1479613468389937334" },
+    "Nightmare": { type: "PvM", roleId: "1479614048927613028" },
+    "God Wars Dungeon": { type: "PvM", roleId: "1479636155434664127" },
+    "Corporeal Beast": { type: "PvM", roleId: "1479613807373586565" },
+    "Dagannoth Kings": { type: "PvM", roleId: "1479614231711318086" },
+    "Hueycoatl": { type: "PvM", roleId: "1479613496386916483" },
+    "Wilderness Bosses": { type: "PvM", roleId: "1479614016799113397" },
+    "Yama": { type: "PvM", roleId: "1479613668667686983" },
+
+    "Barbarian Assault": { type: "Minigame", roleId: "1479635786168271084" },
+    "Pest Control": { type: "Minigame", roleId: "1479635832133517484" },
+    "Soul Wars": { type: "Minigame", roleId: "1479635856779251782" },
+    "Castle Wars": { type: "Minigame", roleId: "1479635955542523956" },
+    "Guardians of the Rift": { type: "Minigame", roleId: "1479635989810118824" },
+    "Wintertodt": { type: "Minigame", roleId: "1479636034085060681" },
+    "Tempoross": { type: "Minigame", roleId: "1479636062610395146" },
+    "Volcanic Mine": { type: "Minigame", roleId: "1479636083183718583" },
+    "Shooting Stars": { type: "Minigame", roleId: "1479636112149577758" }
+};
+
+const lfgDrafts = new Map();
 
 let data = {
     total: 0,
@@ -110,6 +138,146 @@ async function ensureCofferMessage(client) {
     }
 }
 
+function getEmptyDraft() {
+    return {
+        activityType: "",
+        activityName: "",
+        teamSize: "",
+        startTime: "",
+        notes: ""
+    };
+}
+
+function getDraft(userId) {
+    if (!lfgDrafts.has(userId)) {
+        lfgDrafts.set(userId, getEmptyDraft());
+    }
+    return lfgDrafts.get(userId);
+}
+
+function buildLfgPanelContent(userId) {
+    const draft = getDraft(userId);
+
+    return `🟣 **Astral LFG Setup**
+
+**Activity Type:** ${draft.activityType || "Not selected"}
+**Activity:** ${draft.activityName || "Not selected"}
+**Team Size:** ${draft.teamSize || "Not selected"}
+**Start Time:** ${draft.startTime || "Not selected"}
+**Notes:** ${draft.notes || "None"}
+
+Choose your options below, then press **Submit LFG**.`;
+}
+
+function buildLfgPanelComponents() {
+    const typeRow = new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+            .setCustomId('lfg_type')
+            .setPlaceholder('Choose Activity Type')
+            .addOptions(
+                { label: 'PvM', value: 'PvM' },
+                { label: 'Minigame', value: 'Minigame' }
+            )
+    );
+
+    const activityRow = new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+            .setCustomId('lfg_activity')
+            .setPlaceholder('Choose Activity')
+            .addOptions(
+                { label: 'ToA', value: 'ToA' },
+                { label: 'CoX', value: 'CoX' },
+                { label: 'ToB', value: 'ToB' },
+                { label: 'Nex', value: 'Nex' },
+                { label: 'Royal Titans', value: 'Royal Titans' },
+                { label: 'Nightmare', value: 'Nightmare' },
+                { label: 'God Wars Dungeon', value: 'God Wars Dungeon' },
+                { label: 'Corporeal Beast', value: 'Corporeal Beast' },
+                { label: 'Dagannoth Kings', value: 'Dagannoth Kings' },
+                { label: 'Hueycoatl', value: 'Hueycoatl' },
+                { label: 'Wilderness Bosses', value: 'Wilderness Bosses' },
+                { label: 'Yama', value: 'Yama' },
+                { label: 'Barbarian Assault', value: 'Barbarian Assault' },
+                { label: 'Pest Control', value: 'Pest Control' },
+                { label: 'Soul Wars', value: 'Soul Wars' },
+                { label: 'Castle Wars', value: 'Castle Wars' },
+                { label: 'Guardians of the Rift', value: 'Guardians of the Rift' },
+                { label: 'Wintertodt', value: 'Wintertodt' },
+                { label: 'Tempoross', value: 'Tempoross' },
+                { label: 'Volcanic Mine', value: 'Volcanic Mine' },
+                { label: 'Shooting Stars', value: 'Shooting Stars' }
+            )
+    );
+
+    const teamRow = new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+            .setCustomId('lfg_team')
+            .setPlaceholder('Choose Team Size')
+            .addOptions(
+                { label: 'Duo', value: 'Duo' },
+                { label: 'Trio', value: 'Trio' },
+                { label: '4 Man', value: '4 Man' },
+                { label: '5 Man', value: '5 Man' },
+                { label: 'Mass', value: 'Mass' },
+                { label: 'Learners', value: 'Learners' }
+            )
+    );
+
+    const timeRow = new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+            .setCustomId('lfg_time')
+            .setPlaceholder('Choose Start Time')
+            .addOptions(
+                { label: 'Now', value: 'Now' },
+                { label: '15 Minutes', value: '15 Minutes' },
+                { label: '30 Minutes', value: '30 Minutes' },
+                { label: '1 Hour', value: '1 Hour' }
+            )
+    );
+
+    const buttonRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId('lfg_notes')
+            .setLabel('Add Notes')
+            .setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+            .setCustomId('lfg_submit')
+            .setLabel('Submit LFG')
+            .setStyle(ButtonStyle.Success),
+        new ButtonBuilder()
+            .setCustomId('lfg_cancel')
+            .setLabel('Cancel')
+            .setStyle(ButtonStyle.Danger)
+    );
+
+    return [typeRow, activityRow, teamRow, timeRow, buttonRow];
+}
+
+function buildStartTimeText(startTime) {
+    const now = Math.floor(Date.now() / 1000);
+
+    if (startTime === "Now") {
+        return `<t:${now}:t> • <t:${now}:R>`;
+    }
+
+    if (startTime === "15 Minutes") {
+        const ts = now + (15 * 60);
+        return `<t:${ts}:t> • <t:${ts}:R>`;
+    }
+
+    if (startTime === "30 Minutes") {
+        const ts = now + (30 * 60);
+        return `<t:${ts}:t> • <t:${ts}:R>`;
+    }
+
+    if (startTime === "1 Hour") {
+        const ts = now + (60 * 60);
+        return `<t:${ts}:t> • <t:${ts}:R>`;
+    }
+
+    return startTime;
+}
+
 const commands = [
     new SlashCommandBuilder()
         .setName('coffer')
@@ -156,38 +324,40 @@ client.once('ready', async () => {
 client.on('interactionCreate', async interaction => {
 
     if (interaction.isButton()) {
+
         if (interaction.customId === 'create_lfg') {
+            const member = interaction.member;
+
+            if (!member.roles.cache.has(MEMBER_ROLE_ID)) {
+                await interaction.reply({
+                    content: "You must have the Member role to create LFG events.",
+                    ephemeral: true
+                });
+                return;
+            }
+
+            if (interaction.channel.id !== LFG_CHANNEL_ID) {
+                await interaction.reply({
+                    content: "LFG events can only be created in the LFG channel.",
+                    ephemeral: true
+                });
+                return;
+            }
+
+            lfgDrafts.set(interaction.user.id, getEmptyDraft());
+
+            await interaction.reply({
+                content: buildLfgPanelContent(interaction.user.id),
+                components: buildLfgPanelComponents(),
+                ephemeral: true
+            });
+            return;
+        }
+
+        if (interaction.customId === 'lfg_notes') {
             const modal = new ModalBuilder()
-                .setCustomId('lfg_modal')
-                .setTitle('Create Astral LFG');
-
-            const activityTypeInput = new TextInputBuilder()
-                .setCustomId('activity_type')
-                .setLabel('Activity Type: PvM or Minigame')
-                .setStyle(TextInputStyle.Short)
-                .setPlaceholder('Example: PvM')
-                .setRequired(true);
-
-            const activityInput = new TextInputBuilder()
-                .setCustomId('activity_name')
-                .setLabel('Activity Name')
-                .setStyle(TextInputStyle.Short)
-                .setPlaceholder('Example: ToA')
-                .setRequired(true);
-
-            const teamSizeInput = new TextInputBuilder()
-                .setCustomId('team_size')
-                .setLabel('Team Size')
-                .setStyle(TextInputStyle.Short)
-                .setPlaceholder('Example: 4 Man')
-                .setRequired(true);
-
-            const startTimeInput = new TextInputBuilder()
-                .setCustomId('start_time')
-                .setLabel('Start Time')
-                .setStyle(TextInputStyle.Short)
-                .setPlaceholder('Example: Now or 17:00')
-                .setRequired(true);
+                .setCustomId('lfg_notes_modal')
+                .setTitle('Add LFG Notes');
 
             const notesInput = new TextInputBuilder()
                 .setCustomId('notes')
@@ -197,38 +367,119 @@ client.on('interactionCreate', async interaction => {
                 .setRequired(false);
 
             modal.addComponents(
-                new ActionRowBuilder().addComponents(activityTypeInput),
-                new ActionRowBuilder().addComponents(activityInput),
-                new ActionRowBuilder().addComponents(teamSizeInput),
-                new ActionRowBuilder().addComponents(startTimeInput),
                 new ActionRowBuilder().addComponents(notesInput)
             );
 
             await interaction.showModal(modal);
             return;
         }
+
+        if (interaction.customId === 'lfg_cancel') {
+            lfgDrafts.delete(interaction.user.id);
+
+            await interaction.update({
+                content: "LFG creation canceled.",
+                components: []
+            });
+            return;
+        }
+
+        if (interaction.customId === 'lfg_submit') {
+            const draft = getDraft(interaction.user.id);
+
+            if (!draft.activityType || !draft.activityName || !draft.teamSize || !draft.startTime) {
+                await interaction.reply({
+                    content: "Please finish all dropdown selections before submitting.",
+                    ephemeral: true
+                });
+                return;
+            }
+
+            const activityInfo = ACTIVITY_MAP[draft.activityName];
+
+            if (!activityInfo) {
+                await interaction.reply({
+                    content: "That activity is not recognized.",
+                    ephemeral: true
+                });
+                return;
+            }
+
+            if (activityInfo.type !== draft.activityType) {
+                await interaction.reply({
+                    content: "Your Activity Type and Activity do not match. Please fix them and try again.",
+                    ephemeral: true
+                });
+                return;
+            }
+
+            const roleMention = `<@&${activityInfo.roleId}>`;
+
+            await interaction.channel.send({
+                content:
+`${roleMention}
+
+🟣 **Astral Group Finder**
+
+**Activity:** ${draft.activityName}
+**Type:** ${draft.activityType}
+**Host:** <@${interaction.user.id}>
+**Team Size:** ${draft.teamSize}
+**Start Time:** ${buildStartTimeText(draft.startTime)}
+**Notes:** ${draft.notes || "None"}
+
+Interested:
+• <@${interaction.user.id}> (Host)`
+            });
+
+            lfgDrafts.delete(interaction.user.id);
+
+            await interaction.update({
+                content: "LFG posted successfully.",
+                components: []
+            });
+            return;
+        }
+    }
+
+    if (interaction.isStringSelectMenu()) {
+        const draft = getDraft(interaction.user.id);
+
+        if (interaction.customId === 'lfg_type') {
+            draft.activityType = interaction.values[0];
+        }
+
+        if (interaction.customId === 'lfg_activity') {
+            draft.activityName = interaction.values[0];
+        }
+
+        if (interaction.customId === 'lfg_team') {
+            draft.teamSize = interaction.values[0];
+        }
+
+        if (interaction.customId === 'lfg_time') {
+            draft.startTime = interaction.values[0];
+        }
+
+        lfgDrafts.set(interaction.user.id, draft);
+
+        await interaction.update({
+            content: buildLfgPanelContent(interaction.user.id),
+            components: buildLfgPanelComponents()
+        });
+        return;
     }
 
     if (interaction.isModalSubmit()) {
-        if (interaction.customId === 'lfg_modal') {
-            const activityType = interaction.fields.getTextInputValue('activity_type');
-            const activityName = interaction.fields.getTextInputValue('activity_name');
-            const teamSize = interaction.fields.getTextInputValue('team_size');
-            const startTime = interaction.fields.getTextInputValue('start_time');
-            const notes = interaction.fields.getTextInputValue('notes') || 'None';
+        if (interaction.customId === 'lfg_notes_modal') {
+            const draft = getDraft(interaction.user.id);
+            draft.notes = interaction.fields.getTextInputValue('notes') || '';
+            lfgDrafts.set(interaction.user.id, draft);
 
             await interaction.reply({
-                content:
-`LFG submitted.
-
-Activity Type: ${activityType}
-Activity: ${activityName}
-Team Size: ${teamSize}
-Start Time: ${startTime}
-Notes: ${notes}`,
+                content: "Notes saved. Go back to your LFG panel and press Submit LFG when ready.",
                 ephemeral: true
             });
-
             return;
         }
     }
@@ -280,7 +531,7 @@ Notes: ${notes}`,
 
     if (interaction.commandName === 'timezone') {
         await interaction.reply({
-            content: "Timezone setup panel coming next step.",
+            content: "Timezone dropdown setup is coming next.",
             ephemeral: true
         });
         return;
