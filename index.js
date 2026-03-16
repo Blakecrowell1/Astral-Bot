@@ -800,17 +800,19 @@ client.on('interactionCreate', async interaction => {
             ephemeral: true
         });
 
-        await interaction.channel.send({
-            content: `🟣 **Astral Group Finder**
+const embed = new EmbedBuilder()
+    .setColor(0x7a5cff)
+    .setTitle("Astral Group Finder")
+    .setDescription(
+`Create a group for **PvM** or **minigame** content.
 
-Create a group for PvM or minigame content.
+Press **Create LFG** below to start a group event.`
+    )
+    .setFooter({ text: "Astral Clan Event System" });
 
-Press the button below to create an LFG event.`,
-            components: [row]
-        });
-
-        return;
-    }
+await interaction.channel.send({
+    embeds: [embed],
+    components: [row]
 });
 
 (async () => {
