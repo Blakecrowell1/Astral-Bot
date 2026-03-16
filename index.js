@@ -164,8 +164,7 @@ Notes: ${notes}`,
         });
 
         await interaction.channel.send({
-            content:
-`🟣 **Astral Group Finder**
+            content: `🟣 **Astral Group Finder**
 
 Create a group for PvM or minigame content.
 
