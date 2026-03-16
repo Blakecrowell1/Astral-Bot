@@ -42,6 +42,18 @@ client.once('ready', () => {
 
 client.on('interactionCreate', async interaction => {
 
+    if (interaction.isButton()) {
+
+        if (interaction.customId === 'create_lfg') {
+            await interaction.reply({
+                content: "LFG creation form coming next step.",
+                ephemeral: true
+            });
+            return;
+        }
+
+    }
+
     if (!interaction.isChatInputCommand()) return;
 
     if (interaction.commandName === 'timezone') {
@@ -51,6 +63,7 @@ client.on('interactionCreate', async interaction => {
             ephemeral: true
         });
 
+        return;
     }
 
     if (interaction.commandName === 'lfgpanel') {
@@ -95,6 +108,7 @@ Press the button below to create an LFG event.`,
             components: [row]
         });
 
+        return;
     }
 
 });
