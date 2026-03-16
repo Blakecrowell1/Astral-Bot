@@ -11,7 +11,8 @@ const {
     ModalBuilder,
     TextInputBuilder,
     TextInputStyle,
-    ChannelType
+    ChannelType,
+    EmbedBuilder
 } = require('discord.js');
 const fs = require('fs');
 
@@ -28,19 +29,46 @@ const MEMBER_ROLE_ID = "1479586030058471530";
 const COIN = "<:Coins:1480262838323773625>";
 const DATA_FILE = "coffer.json";
 
+const PVM_ACTIVITIES = [
+    "ToA",
+    "CoX",
+    "ToB",
+    "Hueycoatl",
+    "Wilderness Bosses",
+    "Yama",
+    "God Wars Dungeon",
+    "Royal Titans",
+    "Nex",
+    "Nightmare",
+    "Dagannoth Kings",
+    "Corporeal Beast"
+];
+
+const MINIGAME_ACTIVITIES = [
+    "Barbarian Assault",
+    "Pest Control",
+    "Soul Wars",
+    "Castle Wars",
+    "Guardians of the Rift",
+    "Wintertodt",
+    "Tempoross",
+    "Volcanic Mine",
+    "Shooting Stars"
+];
+
 const ACTIVITY_MAP = {
     "ToA": { type: "PvM", roleId: "1479613378333905120" },
     "CoX": { type: "PvM", roleId: "1479613406725279920" },
     "ToB": { type: "PvM", roleId: "1479613429844279371" },
-    "Nex": { type: "PvM", roleId: "1479613451751129148" },
-    "Royal Titans": { type: "PvM", roleId: "1479613468389937334" },
-    "Nightmare": { type: "PvM", roleId: "1479614048927613028" },
-    "God Wars Dungeon": { type: "PvM", roleId: "1479636155434664127" },
-    "Corporeal Beast": { type: "PvM", roleId: "1479613807373586565" },
-    "Dagannoth Kings": { type: "PvM", roleId: "1479614231711318086" },
     "Hueycoatl": { type: "PvM", roleId: "1479613496386916483" },
     "Wilderness Bosses": { type: "PvM", roleId: "1479614016799113397" },
     "Yama": { type: "PvM", roleId: "1479613668667686983" },
+    "God Wars Dungeon": { type: "PvM", roleId: "1479636155434664127" },
+    "Royal Titans": { type: "PvM", roleId: "1479613468389937334" },
+    "Nex": { type: "PvM", roleId: "1479613451751129148" },
+    "Nightmare": { type: "PvM", roleId: "1479614048927613028" },
+    "Dagannoth Kings": { type: "PvM", roleId: "1479614231711318086" },
+    "Corporeal Beast": { type: "PvM", roleId: "1479613807373586565" },
 
     "Barbarian Assault": { type: "Minigame", roleId: "1479635786168271084" },
     "Pest Control": { type: "Minigame", roleId: "1479635832133517484" },
@@ -179,7 +207,21 @@ function buildLfgPanelContent(userId) {
 Choose your options below, then press **Submit LFG**.`;
 }
 
-function buildLfgPanelComponents() {
+function buildActivityOptions(activityType) {
+    const activities =
+        activityType === "PvM" ? PVM_ACTIVITIES :
+        activityType === "Minigame" ? MINIGAME_ACTIVITIES :
+        [];
+
+    return activities.map(name => ({
+        label: name,
+        value: name
+    }));
+}
+
+function buildLfgPanelComponents(userId) {
+    const draft = getDraft(userId);
+
     const typeRow = new ActionRowBuilder().addComponents(
         new StringSelectMenuBuilder()
             .setCustomId('lfg_type')
@@ -190,34 +232,23 @@ function buildLfgPanelComponents() {
             )
     );
 
-    const activityRow = new ActionRowBuilder().addComponents(
-        new StringSelectMenuBuilder()
-            .setCustomId('lfg_activity')
-            .setPlaceholder('Choose Activity')
-            .addOptions(
-                { label: 'ToA', value: 'ToA' },
-                { label: 'CoX', value: 'CoX' },
-                { label: 'ToB', value: 'ToB' },
-                { label: 'Nex', value: 'Nex' },
-                { label: 'Royal Titans', value: 'Royal Titans' },
-                { label: 'Nightmare', value: 'Nightmare' },
-                { label: 'God Wars Dungeon', value: 'God Wars Dungeon' },
-                { label: 'Corporeal Beast', value: 'Corporeal Beast' },
-                { label: 'Dagannoth Kings', value: 'Dagannoth Kings' },
-                { label: 'Hueycoatl', value: 'Hueycoatl' },
-                { label: 'Wilderness Bosses', value: 'Wilderness Bosses' },
-                { label: 'Yama', value: 'Yama' },
-                { label: 'Barbarian Assault', value: 'Barbarian Assault' },
-                { label: 'Pest Control', value: 'Pest Control' },
-                { label: 'Soul Wars', value: 'Soul Wars' },
-                { label: 'Castle Wars', value: 'Castle Wars' },
-                { label: 'Guardians of the Rift', value: 'Guardians of the Rift' },
-                { label: 'Wintertodt', value: 'Wintertodt' },
-                { label: 'Tempoross', value: 'Tempoross' },
-                { label: 'Volcanic Mine', value: 'Volcanic Mine' },
-                { label: 'Shooting Stars', value: 'Shooting Stars' }
-            )
-    );
+    const activityMenu = new StringSelectMenuBuilder()
+        .setCustomId('lfg_activity')
+        .setPlaceholder(
+            draft.activityType
+                ? `Choose ${draft.activityType} Activity`
+                : 'Choose Activity Type First'
+        );
+
+    if (!draft.activityType) {
+        activityMenu
+            .setDisabled(true)
+            .addOptions([{ label: 'Choose Activity Type First', value: 'disabled_activity' }]);
+    } else {
+        activityMenu.addOptions(buildActivityOptions(draft.activityType));
+    }
+
+    const activityRow = new ActionRowBuilder().addComponents(activityMenu);
 
     const teamRow = new ActionRowBuilder().addComponents(
         new StringSelectMenuBuilder()
@@ -317,24 +348,29 @@ function buildInterestedList(post) {
     }).join('\n');
 }
 
-function buildLfgPostContent(post) {
+function buildLfgEmbed(post) {
     const isFull = post.interested.length >= post.limit;
-    const closedLine = post.closed ? `\n\n**Group Closed**` : "";
-    const fullLine = !post.closed && isFull ? `\n\n**Group Full**` : "";
+    let footerText = "Open Group";
 
-    return `<@&${post.roleId}>
+    if (post.closed) {
+        footerText = "Group Closed";
+    } else if (isFull) {
+        footerText = "Group Full";
+    }
 
-🟣 **Astral Group Finder**
-
-**Activity:** ${post.activityName}
-**Type:** ${post.activityType}
-**Host:** <@${post.hostId}>
-**Team Size:** ${post.teamSize}
-**Start Time:** ${post.startTimeText}
-**Notes:** ${post.notes || "None"}
-
-Interested:
-${buildInterestedList(post)}${fullLine}${closedLine}`;
+    return new EmbedBuilder()
+        .setTitle("Astral Group Finder")
+        .setDescription(`<@&${post.roleId}>`)
+        .addFields(
+            { name: "Activity", value: post.activityName, inline: true },
+            { name: "Type", value: post.activityType, inline: true },
+            { name: "Team Size", value: post.teamSize, inline: true },
+            { name: "Host", value: `<@${post.hostId}>`, inline: true },
+            { name: "Start Time", value: post.startTimeText, inline: true },
+            { name: "Notes", value: post.notes || "None", inline: false },
+            { name: "Interested", value: buildInterestedList(post), inline: false }
+        )
+        .setFooter({ text: footerText });
 }
 
 const commands = [
@@ -407,7 +443,7 @@ client.on('interactionCreate', async interaction => {
 
             await interaction.reply({
                 content: buildLfgPanelContent(interaction.user.id),
-                components: buildLfgPanelComponents(),
+                components: buildLfgPanelComponents(interaction.user.id),
                 ephemeral: true
             });
             return;
@@ -488,7 +524,8 @@ client.on('interactionCreate', async interaction => {
             const isFull = newPost.interested.length >= newPost.limit;
 
             const sentMessage = await interaction.channel.send({
-                content: buildLfgPostContent(newPost),
+                content: `<@&${newPost.roleId}>`,
+                embeds: [buildLfgEmbed(newPost)],
                 components: buildEventButtons(isFull, false)
             });
 
@@ -542,7 +579,8 @@ client.on('interactionCreate', async interaction => {
             const isFull = post.interested.length >= post.limit;
 
             await interaction.update({
-                content: buildLfgPostContent(post),
+                content: `<@&${post.roleId}>`,
+                embeds: [buildLfgEmbed(post)],
                 components: buildEventButtons(isFull, false)
             });
             return;
@@ -588,7 +626,8 @@ client.on('interactionCreate', async interaction => {
             const isFull = post.interested.length >= post.limit;
 
             await interaction.update({
-                content: buildLfgPostContent(post),
+                content: `<@&${post.roleId}>`,
+                embeds: [buildLfgEmbed(post)],
                 components: buildEventButtons(isFull, false)
             });
             return;
@@ -616,7 +655,8 @@ client.on('interactionCreate', async interaction => {
             post.closed = true;
 
             await interaction.update({
-                content: buildLfgPostContent(post),
+                content: `<@&${post.roleId}>`,
+                embeds: [buildLfgEmbed(post)],
                 components: buildEventButtons(false, true)
             });
 
@@ -638,6 +678,7 @@ client.on('interactionCreate', async interaction => {
 
         if (interaction.customId === 'lfg_type') {
             draft.activityType = interaction.values[0];
+            draft.activityName = "";
         }
 
         if (interaction.customId === 'lfg_activity') {
@@ -656,7 +697,7 @@ client.on('interactionCreate', async interaction => {
 
         await interaction.update({
             content: buildLfgPanelContent(interaction.user.id),
-            components: buildLfgPanelComponents()
+            components: buildLfgPanelComponents(interaction.user.id)
         });
         return;
     }
