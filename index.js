@@ -288,36 +288,39 @@ function buildStartTimeText(startTime) {
     return startTime;
 }
 
-function buildJoinLeaveButtons(isFull) {
+function buildEventButtons(isFull, isClosed) {
     return [
         new ActionRowBuilder().addComponents(
             new ButtonBuilder()
                 .setCustomId('lfg_join')
                 .setLabel('Join')
                 .setStyle(ButtonStyle.Success)
-                .setDisabled(isFull),
+                .setDisabled(isFull || isClosed),
             new ButtonBuilder()
                 .setCustomId('lfg_leave')
                 .setLabel('Leave')
                 .setStyle(ButtonStyle.Danger)
+                .setDisabled(isClosed),
+            new ButtonBuilder()
+                .setCustomId('lfg_close')
+                .setLabel('Close')
+                .setStyle(ButtonStyle.Secondary)
+                .setDisabled(isClosed)
         )
     ];
 }
 
 function buildInterestedList(post) {
-    const lines = post.interested.map(id => {
-        if (id === post.hostId) {
-            return `• <@${id}> (Host)`;
-        }
+    return post.interested.map(id => {
+        if (id === post.hostId) return `• <@${id}> (Host)`;
         return `• <@${id}>`;
-    });
-
-    return lines.join('\n');
+    }).join('\n');
 }
 
 function buildLfgPostContent(post) {
     const isFull = post.interested.length >= post.limit;
-    const statusLine = isFull ? `\n\n**Group Full**` : "";
+    const closedLine = post.closed ? `\n\n**Group Closed**` : "";
+    const fullLine = !post.closed && isFull ? `\n\n**Group Full**` : "";
 
     return `<@&${post.roleId}>
 
@@ -331,7 +334,7 @@ function buildLfgPostContent(post) {
 **Notes:** ${post.notes || "None"}
 
 Interested:
-${buildInterestedList(post)}${statusLine}`;
+${buildInterestedList(post)}${fullLine}${closedLine}`;
 }
 
 const commands = [
@@ -478,14 +481,15 @@ client.on('interactionCreate', async interaction => {
                 startTimeText: buildStartTimeText(draft.startTime),
                 notes: draft.notes || "",
                 roleId: activityInfo.roleId,
-                interested: [interaction.user.id]
+                interested: [interaction.user.id],
+                closed: false
             };
 
             const isFull = newPost.interested.length >= newPost.limit;
 
             const sentMessage = await interaction.channel.send({
                 content: buildLfgPostContent(newPost),
-                components: buildJoinLeaveButtons(isFull)
+                components: buildEventButtons(isFull, false)
             });
 
             activeLfgPosts.set(sentMessage.id, newPost);
@@ -504,6 +508,14 @@ client.on('interactionCreate', async interaction => {
             if (!post) {
                 await interaction.reply({
                     content: "This LFG post is no longer active.",
+                    ephemeral: true
+                });
+                return;
+            }
+
+            if (post.closed) {
+                await interaction.reply({
+                    content: "This group is closed.",
                     ephemeral: true
                 });
                 return;
@@ -531,7 +543,7 @@ client.on('interactionCreate', async interaction => {
 
             await interaction.update({
                 content: buildLfgPostContent(post),
-                components: buildJoinLeaveButtons(isFull)
+                components: buildEventButtons(isFull, false)
             });
             return;
         }
@@ -542,6 +554,14 @@ client.on('interactionCreate', async interaction => {
             if (!post) {
                 await interaction.reply({
                     content: "This LFG post is no longer active.",
+                    ephemeral: true
+                });
+                return;
+            }
+
+            if (post.closed) {
+                await interaction.reply({
+                    content: "This group is closed.",
                     ephemeral: true
                 });
                 return;
@@ -569,8 +589,46 @@ client.on('interactionCreate', async interaction => {
 
             await interaction.update({
                 content: buildLfgPostContent(post),
-                components: buildJoinLeaveButtons(isFull)
+                components: buildEventButtons(isFull, false)
             });
+            return;
+        }
+
+        if (interaction.customId === 'lfg_close') {
+            const post = activeLfgPosts.get(interaction.message.id);
+
+            if (!post) {
+                await interaction.reply({
+                    content: "This LFG post is no longer active.",
+                    ephemeral: true
+                });
+                return;
+            }
+
+            if (interaction.user.id !== post.hostId) {
+                await interaction.reply({
+                    content: "Only the host can close this group.",
+                    ephemeral: true
+                });
+                return;
+            }
+
+            post.closed = true;
+
+            await interaction.update({
+                content: buildLfgPostContent(post),
+                components: buildEventButtons(false, true)
+            });
+
+            setTimeout(async () => {
+                try {
+                    await interaction.message.delete();
+                    activeLfgPosts.delete(interaction.message.id);
+                } catch (err) {
+                    console.log("Could not delete closed LFG post:", err.message);
+                }
+            }, 30 * 60 * 1000);
+
             return;
         }
     }
