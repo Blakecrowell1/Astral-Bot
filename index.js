@@ -26,6 +26,10 @@ const COFFER_CHANNEL_ID = "1480275246002081972";
 const LFG_CHANNEL_ID = "1479599992346906675";
 const MEMBER_ROLE_ID = "1479586030058471530";
 
+const RECRUIT_CHANNEL_ID = "1479812369889624345";
+const STAFF_ROLE_ID = "1480285731955019806";
+const WOM_LINK = "https://wiseoldman.net/groups/24109";
+
 const COIN = "<:Coins:1480262838323773625>";
 const DATA_FILE = "coffer.json";
 
@@ -409,12 +413,98 @@ const commands = [
 const rest = new REST({ version: '10' }).setToken(TOKEN);
 
 const client = new Client({
-    intents: [GatewayIntentBits.Guilds]
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMembers
+    ]
 });
 
 client.once('ready', async () => {
     console.log("Astral Bot is online");
     await ensureCofferMessage(client);
+});
+
+client.on('guildMemberAdd', async (member) => {
+    try {
+        const channel = await member.guild.channels.fetch(RECRUIT_CHANNEL_ID);
+        if (!channel) return;
+        if (channel.type !== ChannelType.GuildText) return;
+
+        const discordAccount = member.user.tag || `${member.user.username}`;
+
+        const embed = new EmbedBuilder()
+            .setColor(0x57F287)
+            .setTitle("New Member Joined")
+            .addFields(
+                { name: "Discord Account", value: discordAccount, inline: true },
+                { name: "User ID", value: `${member.user.id}`, inline: true },
+                {
+                    name: "Staff Tasks",
+                    value:
+                        `• Change the member's **server nickname** to match their RSN\n` +
+                        `• Add the member to the **Wise Old Man group**\n\n` +
+                        `Wise Old Man:\n${WOM_LINK}`,
+                    inline: false
+                },
+                {
+                    name: "Completion",
+                    value: "React with ✅ once these tasks are completed.",
+                    inline: false
+                }
+            )
+            .setTimestamp();
+
+        const message = await channel.send({
+            content: `<@&${STAFF_ROLE_ID}>`,
+            embeds: [embed]
+        });
+
+        await message.react("✅");
+    } catch (err) {
+        console.log("Join event error:", err.message);
+    }
+});
+
+client.on('guildMemberRemove', async (member) => {
+    try {
+        const channel = await member.guild.channels.fetch(RECRUIT_CHANNEL_ID);
+        if (!channel) return;
+        if (channel.type !== ChannelType.GuildText) return;
+
+        const nickname = member.displayName || member.user.tag || `${member.user.username}`;
+        const discordAccount = member.user.tag || `${member.user.username}`;
+
+        const embed = new EmbedBuilder()
+            .setColor(0xED4245)
+            .setTitle("Member Left")
+            .addFields(
+                { name: "Member", value: nickname, inline: true },
+                { name: "Discord", value: discordAccount, inline: true },
+                { name: "User ID", value: `${member.user.id}`, inline: true },
+                {
+                    name: "Staff Task",
+                    value:
+                        `• Remove this member from the **Wise Old Man group**\n\n` +
+                        `Wise Old Man:\n${WOM_LINK}`,
+                    inline: false
+                },
+                {
+                    name: "Completion",
+                    value: "React with ✅ once complete.",
+                    inline: false
+                }
+            )
+            .setTimestamp();
+
+        const message = await channel.send({
+            content: `<@&${STAFF_ROLE_ID}>`,
+            embeds: [embed]
+        });
+
+        await message.react("✅");
+    } catch (err) {
+        console.log("Leave event error:", err.message);
+    }
 });
 
 client.on('interactionCreate', async interaction => {
