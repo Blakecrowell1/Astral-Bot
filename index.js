@@ -53,7 +53,17 @@ const ACTIVITY_MAP = {
     "Shooting Stars": { type: "Minigame", roleId: "1479636112149577758" }
 };
 
+const TEAM_LIMITS = {
+    "Duo": 2,
+    "Trio": 3,
+    "4 Man": 4,
+    "5 Man": 5,
+    "Mass": 999,
+    "Learners": 999
+};
+
 const lfgDrafts = new Map();
+const activeLfgPosts = new Map();
 
 let data = {
     total: 0,
@@ -278,6 +288,52 @@ function buildStartTimeText(startTime) {
     return startTime;
 }
 
+function buildJoinLeaveButtons(isFull) {
+    return [
+        new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId('lfg_join')
+                .setLabel('Join')
+                .setStyle(ButtonStyle.Success)
+                .setDisabled(isFull),
+            new ButtonBuilder()
+                .setCustomId('lfg_leave')
+                .setLabel('Leave')
+                .setStyle(ButtonStyle.Danger)
+        )
+    ];
+}
+
+function buildInterestedList(post) {
+    const lines = post.interested.map(id => {
+        if (id === post.hostId) {
+            return `• <@${id}> (Host)`;
+        }
+        return `• <@${id}>`;
+    });
+
+    return lines.join('\n');
+}
+
+function buildLfgPostContent(post) {
+    const isFull = post.interested.length >= post.limit;
+    const statusLine = isFull ? `\n\n**Group Full**` : "";
+
+    return `<@&${post.roleId}>
+
+🟣 **Astral Group Finder**
+
+**Activity:** ${post.activityName}
+**Type:** ${post.activityType}
+**Host:** <@${post.hostId}>
+**Team Size:** ${post.teamSize}
+**Start Time:** ${post.startTimeText}
+**Notes:** ${post.notes || "None"}
+
+Interested:
+${buildInterestedList(post)}${statusLine}`;
+}
+
 const commands = [
     new SlashCommandBuilder()
         .setName('coffer')
@@ -413,30 +469,107 @@ client.on('interactionCreate', async interaction => {
                 return;
             }
 
-            const roleMention = `<@&${activityInfo.roleId}>`;
+            const newPost = {
+                hostId: interaction.user.id,
+                activityType: draft.activityType,
+                activityName: draft.activityName,
+                teamSize: draft.teamSize,
+                limit: TEAM_LIMITS[draft.teamSize] || 999,
+                startTimeText: buildStartTimeText(draft.startTime),
+                notes: draft.notes || "",
+                roleId: activityInfo.roleId,
+                interested: [interaction.user.id]
+            };
 
-            await interaction.channel.send({
-                content:
-`${roleMention}
+            const isFull = newPost.interested.length >= newPost.limit;
 
-🟣 **Astral Group Finder**
-
-**Activity:** ${draft.activityName}
-**Type:** ${draft.activityType}
-**Host:** <@${interaction.user.id}>
-**Team Size:** ${draft.teamSize}
-**Start Time:** ${buildStartTimeText(draft.startTime)}
-**Notes:** ${draft.notes || "None"}
-
-Interested:
-• <@${interaction.user.id}> (Host)`
+            const sentMessage = await interaction.channel.send({
+                content: buildLfgPostContent(newPost),
+                components: buildJoinLeaveButtons(isFull)
             });
 
+            activeLfgPosts.set(sentMessage.id, newPost);
             lfgDrafts.delete(interaction.user.id);
 
             await interaction.update({
                 content: "LFG posted successfully.",
                 components: []
+            });
+            return;
+        }
+
+        if (interaction.customId === 'lfg_join') {
+            const post = activeLfgPosts.get(interaction.message.id);
+
+            if (!post) {
+                await interaction.reply({
+                    content: "This LFG post is no longer active.",
+                    ephemeral: true
+                });
+                return;
+            }
+
+            if (post.interested.includes(interaction.user.id)) {
+                await interaction.reply({
+                    content: "You are already in this group.",
+                    ephemeral: true
+                });
+                return;
+            }
+
+            if (post.interested.length >= post.limit) {
+                await interaction.reply({
+                    content: "This group is already full.",
+                    ephemeral: true
+                });
+                return;
+            }
+
+            post.interested.push(interaction.user.id);
+
+            const isFull = post.interested.length >= post.limit;
+
+            await interaction.update({
+                content: buildLfgPostContent(post),
+                components: buildJoinLeaveButtons(isFull)
+            });
+            return;
+        }
+
+        if (interaction.customId === 'lfg_leave') {
+            const post = activeLfgPosts.get(interaction.message.id);
+
+            if (!post) {
+                await interaction.reply({
+                    content: "This LFG post is no longer active.",
+                    ephemeral: true
+                });
+                return;
+            }
+
+            if (interaction.user.id === post.hostId) {
+                await interaction.reply({
+                    content: "The host cannot leave their own group.",
+                    ephemeral: true
+                });
+                return;
+            }
+
+            if (!post.interested.includes(interaction.user.id)) {
+                await interaction.reply({
+                    content: "You are not currently in this group.",
+                    ephemeral: true
+                });
+                return;
+            }
+
+            post.interested = post.interested.filter(id => id !== interaction.user.id);
+
+            const isFull = post.interested.length >= post.limit;
+
+            await interaction.update({
+                content: buildLfgPostContent(post),
+                components: buildJoinLeaveButtons(isFull)
             });
             return;
         }
