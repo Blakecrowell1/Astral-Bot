@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 
 const TOKEN = process.env.TOKEN;
 
@@ -44,18 +44,83 @@ client.on('interactionCreate', async interaction => {
 
     if (interaction.isButton()) {
 
-        if (interaction.customId === 'create_lfg') {
-            await interaction.reply({
-                content: "LFG creation form coming next step.",
-                ephemeral: true
-            });
-            return;
-        }
+if (interaction.customId === 'create_lfg') {
+    const modal = new ModalBuilder()
+        .setCustomId('lfg_modal')
+        .setTitle('Create Astral LFG');
 
+    const activityTypeInput = new TextInputBuilder()
+        .setCustomId('activity_type')
+        .setLabel('Activity Type: PvM or Minigame')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('Example: PvM')
+        .setRequired(true);
+
+    const activityInput = new TextInputBuilder()
+        .setCustomId('activity_name')
+        .setLabel('Activity Name')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('Example: ToA')
+        .setRequired(true);
+
+    const teamSizeInput = new TextInputBuilder()
+        .setCustomId('team_size')
+        .setLabel('Team Size')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('Example: 4 Man')
+        .setRequired(true);
+
+    const startTimeInput = new TextInputBuilder()
+        .setCustomId('start_time')
+        .setLabel('Start Time')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('Example: Now or 17:00')
+        .setRequired(true);
+
+    const notesInput = new TextInputBuilder()
+        .setCustomId('notes')
+        .setLabel('Notes')
+        .setStyle(TextInputStyle.Paragraph)
+        .setPlaceholder('Optional notes')
+        .setRequired(false);
+
+    modal.addComponents(
+        new ActionRowBuilder().addComponents(activityTypeInput),
+        new ActionRowBuilder().addComponents(activityInput),
+        new ActionRowBuilder().addComponents(teamSizeInput),
+        new ActionRowBuilder().addComponents(startTimeInput),
+        new ActionRowBuilder().addComponents(notesInput)
+    );
+
+    await interaction.showModal(modal);
+    return;
+}
+
+if (interaction.isModalSubmit()) {
+
+    if (interaction.customId === 'lfg_modal') {
+        const activityType = interaction.fields.getTextInputValue('activity_type');
+        const activityName = interaction.fields.getTextInputValue('activity_name');
+        const teamSize = interaction.fields.getTextInputValue('team_size');
+        const startTime = interaction.fields.getTextInputValue('start_time');
+        const notes = interaction.fields.getTextInputValue('notes') || 'None';
+
+        await interaction.reply({
+            content:
+`LFG submitted.
+
+Activity Type: ${activityType}
+Activity: ${activityName}
+Team Size: ${teamSize}
+Start Time: ${startTime}
+Notes: ${notes}`,
+            ephemeral: true
+        });
+
+        return;
     }
 
-    if (!interaction.isChatInputCommand()) return;
-
+}
     if (interaction.commandName === 'timezone') {
 
         await interaction.reply({
