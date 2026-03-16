@@ -359,6 +359,7 @@ function buildLfgEmbed(post) {
     }
 
     return new EmbedBuilder()
+        .setColor(0x7a5cff)
         .setTitle("Astral Group Finder")
         .setDescription(`<@&${post.roleId}>`)
         .addFields(
@@ -795,24 +796,26 @@ client.on('interactionCreate', async interaction => {
                 .setStyle(ButtonStyle.Success)
         );
 
+        const embed = new EmbedBuilder()
+            .setColor(0x7a5cff)
+            .setTitle("Astral Group Finder")
+            .setDescription(`Create a group for **PvM** or **minigame** content.
+
+Press **Create LFG** below to start a group event.`)
+            .setFooter({ text: "Astral Clan Event System" });
+
         await interaction.reply({
             content: "LFG control panel created.",
             ephemeral: true
         });
 
-const embed = new EmbedBuilder()
-    .setColor(0x7a5cff)
-    .setTitle("Astral Group Finder")
-    .setDescription(
-`Create a group for **PvM** or **minigame** content.
+        await interaction.channel.send({
+            embeds: [embed],
+            components: [row]
+        });
 
-Press **Create LFG** below to start a group event.`
-    )
-    .setFooter({ text: "Astral Clan Event System" });
-
-await interaction.channel.send({
-    embeds: [embed],
-    components: [row]
+        return;
+    }
 });
 
 (async () => {
