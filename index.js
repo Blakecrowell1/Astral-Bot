@@ -28,6 +28,7 @@ const MEMBER_ROLE_ID = "1479586030058471530";
 
 const RECRUIT_CHANNEL_ID = "1479812369889624345";
 const STAFF_ROLE_ID = "1480285731955019806";
+const LEADERSHIP_ROLE_ID = "PUT_LEADERSHIP_ROLE_ID_HERE";
 const WOM_LINK = "https://wiseoldman.net/groups/24109";
 
 const COIN = "<:Coins:1480262838323773625>";
@@ -425,83 +426,23 @@ client.once('ready', async () => {
 });
 
 client.on('guildMemberAdd', async (member) => {
-    try {
-        const channel = await member.guild.channels.fetch(RECRUIT_CHANNEL_ID);
-        if (!channel) return;
-        if (channel.type !== ChannelType.GuildText) return;
-
-        const discordAccount = member.user.tag || `${member.user.username}`;
-
-        const embed = new EmbedBuilder()
-            .setColor(0x57F287)
-            .setTitle("New Member Joined")
-            .addFields(
-                { name: "Discord Account", value: discordAccount, inline: true },
-                { name: "User ID", value: `${member.user.id}`, inline: true },
-                {
-                    name: "Staff Tasks",
-                    value:
-                        `• Change the member's **server nickname** to match their RSN\n` +
-                        `• Add the member to the **Wise Old Man group**\n\n` +
-                        `Wise Old Man:\n${WOM_LINK}`,
-                    inline: false
-                },
-                {
-                    name: "Completion",
-                    value: "React with ✅ once these tasks are completed.",
-                    inline: false
-                }
-            )
-            .setTimestamp();
-
-        const message = await channel.send({
-            content: `<@&${STAFF_ROLE_ID}>`,
-            embeds: [embed]
-        });
-
-        await message.react("✅");
-    } catch (err) {
-        console.log("Join event error:", err.message);
-    }
+    // No recruiting-team-chat message on join
 });
 
 client.on('guildMemberRemove', async (member) => {
     try {
         const channel = await member.guild.channels.fetch(RECRUIT_CHANNEL_ID);
-        if (!channel) return;
-        if (channel.type !== ChannelType.GuildText) return;
+        if (!channel || channel.type !== ChannelType.GuildText) return;
 
-        const nickname = member.displayName || member.user.tag || `${member.user.username}`;
-        const discordAccount = member.user.tag || `${member.user.username}`;
+        const serverNickname = member.nickname || member.displayName || member.user.username;
 
         const embed = new EmbedBuilder()
             .setColor(0xED4245)
             .setTitle("Member Left")
-            .addFields(
-                { name: "Member", value: nickname, inline: true },
-                { name: "Discord", value: discordAccount, inline: true },
-                { name: "User ID", value: `${member.user.id}`, inline: true },
-                {
-                    name: "Staff Task",
-                    value:
-                        `• Remove this member from the **Wise Old Man group**\n\n` +
-                        `Wise Old Man:\n${WOM_LINK}`,
-                    inline: false
-                },
-                {
-                    name: "Completion",
-                    value: "React with ✅ once complete.",
-                    inline: false
-                }
-            )
+            .setDescription(`${serverNickname} left the server.`)
             .setTimestamp();
 
-        const message = await channel.send({
-            content: `<@&${STAFF_ROLE_ID}>`,
-            embeds: [embed]
-        });
-
-        await message.react("✅");
+        await channel.send({ embeds: [embed] });
     } catch (err) {
         console.log("Leave event error:", err.message);
     }
@@ -735,9 +676,12 @@ client.on('interactionCreate', async interaction => {
                 return;
             }
 
-            if (interaction.user.id !== post.hostId) {
+            const member = interaction.member;
+            const isLeader = member.roles.cache.has(LEADERSHIP_ROLE_ID);
+
+            if (interaction.user.id !== post.hostId && !isLeader) {
                 await interaction.reply({
-                    content: "Only the host can close this group.",
+                    content: "Only the host or leadership can close this group.",
                     ephemeral: true
                 });
                 return;
