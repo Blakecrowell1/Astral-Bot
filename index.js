@@ -149,7 +149,13 @@ function parseGP(input) {
 }
 
 function buildCofferMessage() {
-    return `${COIN}┃Clan Coffers: ${format(data.total)}`;
+    return {
+        embeds: [
+            new EmbedBuilder()
+                .setColor(0xFFD700)
+                .setDescription(`${COIN} ${format(data.total)} ${COIN}`)
+        ]
+    };
 }
 
 async function ensureCofferMessage(client) {
@@ -184,7 +190,7 @@ async function ensureCofferMessage(client) {
             return;
         }
 
-        await message.edit(buildCofferMessage());
+await message.edit(buildCofferMessage());
         console.log("Updated existing coffer message:", message.id);
     } catch (err) {
         console.log("Could not create or update coffer message:", err.message);
