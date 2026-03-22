@@ -28,7 +28,7 @@ const MEMBER_ROLE_ID = "1479586030058471530";
 
 const RECRUIT_CHANNEL_ID = "1479812369889624345";
 const STAFF_ROLE_ID = "1480285731955019806";
-const LEADERSHIP_ROLE_ID = "1479585915037941872";
+const LEADERSHIP_ROLE_ID = "PUT_LEADERSHIP_ROLE_ID_HERE";
 const WOM_LINK = "https://wiseoldman.net/groups/24109";
 
 const COIN = "<:Coins:1480262838323773625>";
@@ -155,15 +155,23 @@ function buildCofferMessage() {
 async function ensureCofferMessage(client) {
     try {
         const channel = await client.channels.fetch(COFFER_CHANNEL_ID);
-        if (!channel) return;
-        if (channel.type !== ChannelType.GuildText) return;
+        if (!channel) {
+            console.log("Coffer channel not found.");
+            return;
+        }
+
+        if (channel.type !== ChannelType.GuildText) {
+            console.log("Coffer channel is not a text channel.");
+            return;
+        }
 
         let message = null;
 
         if (data.messageId) {
             try {
                 message = await channel.messages.fetch(data.messageId);
-            } catch {
+            } catch (err) {
+                console.log("Saved coffer message not found, sending a new one.");
                 message = null;
             }
         }
@@ -172,10 +180,12 @@ async function ensureCofferMessage(client) {
             message = await channel.send(buildCofferMessage());
             data.messageId = message.id;
             saveData();
+            console.log("Created new coffer message:", message.id);
             return;
         }
 
         await message.edit(buildCofferMessage());
+        console.log("Updated existing coffer message:", message.id);
     } catch (err) {
         console.log("Could not create or update coffer message:", err.message);
     }
@@ -425,21 +435,22 @@ client.once('ready', async () => {
     await ensureCofferMessage(client);
 });
 
-client.on('guildMemberAdd', async (member) => {
-    // No recruiting-team-chat message on join
+client.on('guildMemberAdd', async () => {
+    // Join message removed
 });
 
 client.on('guildMemberRemove', async (member) => {
     try {
         const channel = await member.guild.channels.fetch(RECRUIT_CHANNEL_ID);
-        if (!channel || channel.type !== ChannelType.GuildText) return;
+        if (!channel) return;
+        if (channel.type !== ChannelType.GuildText) return;
 
-        const serverNickname = member.nickname || member.displayName || member.user.username;
+        const nickname = member.nickname || member.displayName || member.user.username;
 
         const embed = new EmbedBuilder()
             .setColor(0xED4245)
             .setTitle("Member Left")
-            .setDescription(`${serverNickname} left the server.`)
+            .setDescription(`${nickname} left the server.`)
             .setTimestamp();
 
         await channel.send({ embeds: [embed] });
