@@ -428,7 +428,13 @@ const commands = [
         .setDescription('Create the LFG control panel'),
 new SlashCommandBuilder()
     .setName('bingo')
-    .setDescription('Bingo commands'),
+    .setDescription('Bingo commands')
+    .addSubcommand(sub =>
+        sub.setName('start')
+            .setDescription('Start bingo'))
+    .addSubcommand(sub =>
+        sub.setName('end')
+            .setDescription('End bingo')),
 ].map(c => c.toJSON());
 
 const rest = new REST({ version: '10' }).setToken(TOKEN);

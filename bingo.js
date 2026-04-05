@@ -32,13 +32,19 @@ if (interaction.user.id !== OWNER_ID) {
 }
 
 const data = loadData();
+const sub = interaction.options.getSubcommand();
 
-data.active = !data.active;
-saveData(data);
+if (sub === 'start') {
+    data.active = true;
+    saveData(data);
+    return interaction.reply('Bingo started.');
+}
 
-return interaction.reply({
-    content: data.active ? 'Bingo started.' : 'Bingo ended.'
-});}
+if (sub === 'end') {
+    data.active = false;
+    saveData(data);
+    return interaction.reply('Bingo ended.');
+}
 
 async function handleBingoButton(interaction) {
     return interaction.reply({ content: 'Bingo button clicked.', ephemeral: true });
