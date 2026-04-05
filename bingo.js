@@ -25,8 +25,20 @@ function saveData(data) {
 }
 
 async function handleBingoCommand(interaction) {
-    return interaction.reply({ content: 'Bingo is connected.', ephemeral: true });
+const OWNER_ID = "1289553957982830713";
+
+if (interaction.user.id !== OWNER_ID) {
+    return interaction.reply({ content: 'Not allowed.', ephemeral: true });
 }
+
+const data = loadData();
+
+data.active = !data.active;
+saveData(data);
+
+return interaction.reply({
+    content: data.active ? 'Bingo started.' : 'Bingo ended.'
+});}
 
 async function handleBingoButton(interaction) {
     return interaction.reply({ content: 'Bingo button clicked.', ephemeral: true });
