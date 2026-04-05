@@ -15,6 +15,7 @@ const {
     EmbedBuilder
 } = require('discord.js');
 const fs = require('fs');
+const { handleBingoCommand, handleBingoButton } = require('./bingo');
 
 const TOKEN = process.env.TOKEN;
 
@@ -28,7 +29,7 @@ const MEMBER_ROLE_ID = "1479586030058471530";
 
 const RECRUIT_CHANNEL_ID = "1479812369889624345";
 const STAFF_ROLE_ID = "1480285731955019806";
-const LEADERSHIP_ROLE_ID = "PUT_LEADERSHIP_ROLE_ID_HERE";
+const LEADERSHIP_ROLE_ID = "1479585915037941872";
 const WOM_LINK = "https://wiseoldman.net/groups/24109";
 
 const COIN = "<:Coins:1480262838323773625>";
@@ -424,7 +425,10 @@ const commands = [
 
     new SlashCommandBuilder()
         .setName('lfgpanel')
-        .setDescription('Create the LFG control panel')
+        .setDescription('Create the LFG control panel'),
+new SlashCommandBuilder()
+    .setName('bingo')
+    .setDescription('Bingo commands'),
 ].map(c => c.toJSON());
 
 const rest = new REST({ version: '10' }).setToken(TOKEN);
@@ -468,6 +472,10 @@ client.on('guildMemberRemove', async (member) => {
 client.on('interactionCreate', async interaction => {
 
     if (interaction.isButton()) {
+
+if (interaction.customId.startsWith('bingo_')) {
+    return handleBingoButton(interaction);
+}
 
         if (interaction.customId === 'create_lfg') {
             const member = interaction.member;
@@ -770,6 +778,9 @@ client.on('interactionCreate', async interaction => {
 
     if (!interaction.isChatInputCommand()) return;
 
+if (interaction.commandName === 'bingo') {
+    return handleBingoCommand(interaction);
+}
     if (interaction.commandName === "coffer") {
         await interaction.reply(`${COIN}┃Clan Coffers: ${format(data.total)}`);
         return;
