@@ -879,7 +879,7 @@ recordAttendance(guildMember.id, rsn, eventDate);
         }
 
 let response = `✅ **Attendance recorded for ${eventDate}**\n`;
-        response += `🔍 **Debug - Names found in paste:** ${debugNames.join(', ') || 'None'}\n`;        response += `👥 **${recorded.length} member(s) credited:** ${recorded.join(', ') || 'None'}\n`;
+response += `👥 **${recorded.length} member(s) credited:** ${recorded.join(', ') || 'None'}\n`;
 
         if (notFound.length > 0) {
             response += `⚠️ **Could not find (nickname mismatch?):** ${notFound.join(', ')}`;
