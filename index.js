@@ -860,7 +860,7 @@ const normalized = raw.replace(/`/g, '');
 const debugNames = [];
         const matches = [...normalized.matchAll(/([A-Za-z0-9 _'\-]+)\s*\|\s*\d{2}:\d{2}\s*\|/g)];
         for (const match of matches) {
-            const rsn = match[1].trim();
+const rsn = match[1].trim().replace(/^Late\s*/i, '').replace(/^-\s*/i, '').trim();
             if (!rsn || rsn.toLowerCase() === 'name') continue;
             debugNames.push(rsn);
 
