@@ -856,13 +856,17 @@ if (interaction.commandName === 'recordattendance') {
         const recorded = [];
         const notFound = [];
 
-        for (const line of lines) {
+for (const line of lines) {
             if (!line.includes('|')) continue;
             const parts = line.split('|');
-            if (parts.length < 2) continue;
+            if (parts.length < 3) continue;
 
             const rsn = parts[0].trim();
-            if (!rsn || rsn.toLowerCase() === 'name') continue;
+            if (!rsn) continue;
+            if (rsn.toLowerCase() === 'name') continue;
+            if (rsn.toLowerCase().includes('threshold')) continue;
+            if (rsn.startsWith('-')) continue;
+            if (!/\S/.test(rsn)) continue;
 
 await interaction.guild.members.fetch();
         const guildMember = interaction.guild.members.cache.find(m => {
