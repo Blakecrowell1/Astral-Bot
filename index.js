@@ -852,7 +852,7 @@ if (interaction.commandName === 'recordattendance') {
             year: 'numeric', month: 'long', day: 'numeric'
         });
 
-        const lines = raw.split('\n');
+const lines = raw.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('```'));
         const recorded = [];
         const notFound = [];
 
