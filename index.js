@@ -864,10 +864,11 @@ if (interaction.commandName === 'recordattendance') {
             const rsn = parts[0].trim();
             if (!rsn || rsn.toLowerCase() === 'name') continue;
 
-            const guildMember = interaction.guild.members.cache.find(m => {
-                const nick = (m.nickname || m.displayName || '').toLowerCase();
-                return nick === rsn.toLowerCase();
-            });
+await interaction.guild.members.fetch();
+        const guildMember = interaction.guild.members.cache.find(m => {
+            const nick = (m.nickname || m.displayName || '').toLowerCase();
+            return nick === rsn.toLowerCase();
+        });
 
             if (guildMember) {
 recordAttendance(guildMember.id, rsn, eventDate);
