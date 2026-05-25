@@ -12,5 +12,6 @@
   "type": "commonjs",
   "dependencies": {
 "discord.js": "^14.25.1",
-"better-sqlite3": "^9.4.3"  }
+"sql.js": "^1.10.3"
+  }
 }

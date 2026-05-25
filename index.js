@@ -15,8 +15,7 @@ const {
     EmbedBuilder
 } = require('discord.js');
 const fs = require('fs');
-const db = require('./database');
-
+const { initDB, recordAttendance, getAttendance, deleteAttendance } = require('./database');
 const TOKEN = process.env.TOKEN;
 
 const CLIENT_ID = "1480264097780994270";
@@ -451,7 +450,8 @@ const client = new Client({
 });
 
 client.once('ready', async () => {
-    console.log("Astral Bot is online");
+console.log("Astral Bot is online");
+    await initDB();
     await ensureCofferMessage(client);
 });
 
@@ -461,7 +461,7 @@ client.on('guildMemberAdd', async () => {
 
 client.on('guildMemberRemove', async (member) => {
     try {
-        db.prepare(`DELETE FROM attendance WHERE discord_id = ?`).run(member.id);
+deleteAttendance(member.id);
 
         const channel = await member.guild.channels.fetch(RECRUIT_CHANNEL_ID);
         if (!channel) return;
@@ -870,10 +870,7 @@ if (interaction.commandName === 'recordattendance') {
             });
 
             if (guildMember) {
-                db.prepare(`
-                    INSERT INTO attendance (discord_id, rsn, event_date)
-                    VALUES (?, ?, ?)
-                `).run(guildMember.id, rsn, eventDate);
+recordAttendance(guildMember.id, rsn, eventDate);
                 recorded.push(rsn);
             } else {
                 notFound.push(rsn);
@@ -895,9 +892,7 @@ if (interaction.commandName === 'recordattendance') {
         const member = interaction.member;
         const rsn = member.nickname || member.displayName || interaction.user.username;
 
-        const rows = db.prepare(`
-            SELECT event_date FROM attendance WHERE discord_id = ? ORDER BY created_at DESC
-        `).all(interaction.user.id);
+const rows = getAttendance(interaction.user.id);
 
         if (rows.length === 0) {
             await interaction.reply({
