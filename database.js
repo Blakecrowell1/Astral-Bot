@@ -54,4 +54,14 @@ function deleteAttendance(discordId) {
     saveDB();
 }
 
-module.exports = { initDB, recordAttendance, getAttendance, deleteAttendance };
+function removeMostRecentAttendance(discordId) {
+    db.run(`
+        DELETE FROM attendance WHERE rowid = (
+            SELECT rowid FROM attendance WHERE discord_id = ?
+            ORDER BY created_at DESC LIMIT 1
+        )
+    `, [discordId]);
+    saveDB();
+}
+
+module.exports = { initDB, recordAttendance, getAttendance, deleteAttendance, removeMostRecentAttendance };

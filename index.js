@@ -15,7 +15,7 @@ const {
     EmbedBuilder
 } = require('discord.js');
 const fs = require('fs');
-const { initDB, recordAttendance, getAttendance, deleteAttendance } = require('./database');
+const { initDB, recordAttendance, getAttendance, deleteAttendance, removeMostRecentAttendance } = require('./database');
 const TOKEN = process.env.TOKEN;
 
 const CLIENT_ID = "1480264097780994270";
@@ -435,9 +435,27 @@ new SlashCommandBuilder()
                 .setRequired(true)
         ),
 
-    new SlashCommandBuilder()
+new SlashCommandBuilder()
         .setName('eventattendance')
-        .setDescription('Check your clan event attendance count')
+        .setDescription('Check your clan event attendance count'),
+
+    new SlashCommandBuilder()
+        .setName('addattendance')
+        .setDescription('Manually add an attendance credit for a member (Leadership only)')
+        .addUserOption(option =>
+            option.setName('member')
+                .setDescription('The member to credit')
+                .setRequired(true)
+        ),
+
+    new SlashCommandBuilder()
+        .setName('removeattendance')
+        .setDescription('Remove the most recent attendance entry for a member (Leadership only)')
+        .addUserOption(option =>
+            option.setName('member')
+                .setDescription('The member to remove attendance from')
+                .setRequired(true)
+        )
 ].map(c => c.toJSON());
 
 const rest = new REST({ version: '10' }).setToken(TOKEN);
@@ -890,7 +908,64 @@ response += `👥 **${recorded.length} member(s) credited:** ${recorded.join(', 
         await interaction.reply({ content: response, ephemeral: true });
         return;
     }
+if (interaction.commandName === 'addattendance') {
+        const member = interaction.member;
 
+        if (!member.roles.cache.has(LEADERSHIP_ROLE_ID)) {
+            await interaction.reply({
+                content: "Only leadership can manually add attendance.",
+                ephemeral: true
+            });
+            return;
+        }
+
+        const target = interaction.options.getMember('member');
+        const rsn = target.nickname || target.displayName || target.user.username;
+        const eventDate = new Date().toLocaleDateString('en-US', {
+            year: 'numeric', month: 'long', day: 'numeric'
+        });
+
+        recordAttendance(target.id, rsn, eventDate);
+
+        await interaction.reply({
+            content: `✅ Manually added 1 attendance credit for **${rsn}** on ${eventDate}.`,
+            ephemeral: true
+        });
+        return;
+    }
+
+    if (interaction.commandName === 'removeattendance') {
+        const member = interaction.member;
+
+        if (!member.roles.cache.has(LEADERSHIP_ROLE_ID)) {
+            await interaction.reply({
+                content: "Only leadership can remove attendance.",
+                ephemeral: true
+            });
+            return;
+        }
+
+        const target = interaction.options.getMember('member');
+        const rsn = target.nickname || target.displayName || target.user.username;
+
+        const rows = getAttendance(target.id);
+
+        if (rows.length === 0) {
+            await interaction.reply({
+                content: `⚠️ **${rsn}** has no attendance records to remove.`,
+                ephemeral: true
+            });
+            return;
+        }
+
+        removeMostRecentAttendance(target.id);
+
+        await interaction.reply({
+            content: `✅ Removed the most recent attendance entry for **${rsn}**. They now have **${rows.length - 1}** event(s) on record.`,
+            ephemeral: true
+        });
+        return;
+    }
     if (interaction.commandName === 'eventattendance') {
         const member = interaction.member;
         const rsn = member.nickname || member.displayName || interaction.user.username;
