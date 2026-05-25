@@ -856,7 +856,8 @@ if (interaction.commandName === 'recordattendance') {
         const recorded = [];
         const notFound = [];
 
-for (const line of lines) {
+const debugNames = [];
+        for (const line of lines) {
             if (!line.includes('|')) continue;
             const parts = line.split('|');
             if (parts.length < 3) continue;
@@ -867,6 +868,7 @@ for (const line of lines) {
             if (rsn.toLowerCase().includes('threshold')) continue;
             if (rsn.startsWith('-')) continue;
             if (!/\S/.test(rsn)) continue;
+            debugNames.push(rsn);
 
 await interaction.guild.members.fetch();
         const guildMember = interaction.guild.members.cache.find(m => {
@@ -882,8 +884,8 @@ recordAttendance(guildMember.id, rsn, eventDate);
             }
         }
 
-        let response = `✅ **Attendance recorded for ${eventDate}**\n`;
-        response += `👥 **${recorded.length} member(s) credited:** ${recorded.join(', ') || 'None'}\n`;
+let response = `✅ **Attendance recorded for ${eventDate}**\n`;
+        response += `🔍 **Debug - Names found in paste:** ${debugNames.join(', ') || 'None'}\n`;        response += `👥 **${recorded.length} member(s) credited:** ${recorded.join(', ') || 'None'}\n`;
 
         if (notFound.length > 0) {
             response += `⚠️ **Could not find (nickname mismatch?):** ${notFound.join(', ')}`;
