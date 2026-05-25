@@ -858,10 +858,10 @@ const normalized = raw.replace(/`/g, '');
         const notFound = [];
 
 const debugNames = [];
-        const matches = [...normalized.matchAll(/([A-Za-z0-9 _'\-]+?)\s*\|\s*\d{2}:\d{2}\s*\|\s*[-\w]*/g)];
+        const matches = [...normalized.matchAll(/([A-Za-z0-9 _'\-]+)\s*\|\s*\d{2}:\d{2}\s*\|/g)];
         for (const match of matches) {
             const rsn = match[1].trim();
-            if (!rsn || rsn.toLowerCase() === 'name' || rsn.toLowerCase() === 'time') continue;
+            if (!rsn || rsn.toLowerCase() === 'name') continue;
             debugNames.push(rsn);
 
 await interaction.guild.members.fetch();
