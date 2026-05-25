@@ -453,6 +453,9 @@ client.once('ready', async () => {
 console.log("Astral Bot is online");
     await initDB();
     await ensureCofferMessage(client);
+    const guild = await client.guilds.fetch(GUILD_ID);
+    await guild.members.fetch();
+    console.log("Member cache loaded.");
 });
 
 client.on('guildMemberAdd', async () => {
@@ -864,8 +867,7 @@ const rsn = match[1].trim().replace(/^Late\s*/i, '').replace(/^-\s*/i, '').trim(
             if (!rsn || rsn.toLowerCase() === 'name') continue;
             debugNames.push(rsn);
 
-await interaction.guild.members.fetch();
-        const guildMember = interaction.guild.members.cache.find(m => {
+const guildMember = interaction.guild.members.cache.find(m => {
             const nick = (m.nickname || m.displayName || '').toLowerCase();
             return nick === rsn.toLowerCase();
         });
