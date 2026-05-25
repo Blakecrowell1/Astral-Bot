@@ -437,7 +437,12 @@ new SlashCommandBuilder()
 
 new SlashCommandBuilder()
         .setName('eventattendance')
-        .setDescription('Check your clan event attendance count'),
+        .setDescription('Check clan event attendance')
+        .addUserOption(option =>
+            option.setName('member')
+                .setDescription('Member to look up (leave blank to check yourself)')
+                .setRequired(false)
+        ),
 
     new SlashCommandBuilder()
         .setName('addattendance')
@@ -966,16 +971,15 @@ if (interaction.commandName === 'addattendance') {
         });
         return;
     }
-    if (interaction.commandName === 'eventattendance') {
-        const member = interaction.member;
-        const rsn = member.nickname || member.displayName || interaction.user.username;
+if (interaction.commandName === 'eventattendance') {
+        const target = interaction.options.getMember('member') || interaction.member;
+        const rsn = target.nickname || target.displayName || target.user.username;
 
-const rows = getAttendance(interaction.user.id);
+        const rows = getAttendance(target.id);
 
         if (rows.length === 0) {
             await interaction.reply({
-                content: `📋 **${rsn}** has no recorded event attendance yet.`,
-                ephemeral: true
+                content: `📋 **${rsn}** has no recorded event attendance yet.`
             });
             return;
         }
@@ -983,8 +987,7 @@ const rows = getAttendance(interaction.user.id);
         const eventList = rows.map((r, i) => `${i + 1}. ${r.event_date}`).join('\n');
 
         await interaction.reply({
-            content: `📋 **Event Attendance for ${rsn}**\n**Total: ${rows.length}**\n\n${eventList}`,
-            ephemeral: true
+            content: `📋 **Event Attendance for ${rsn}**\n**Total: ${rows.length}**\n\n${eventList}`
         });
         return;
     }
