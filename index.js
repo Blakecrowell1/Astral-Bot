@@ -15,6 +15,7 @@ const {
     EmbedBuilder
 } = require('discord.js');
 const fs = require('fs');
+const db = require('./database');
 
 const TOKEN = process.env.TOKEN;
 
@@ -28,7 +29,7 @@ const MEMBER_ROLE_ID = "1479586030058471530";
 
 const RECRUIT_CHANNEL_ID = "1479812369889624345";
 const STAFF_ROLE_ID = "1480285731955019806";
-const LEADERSHIP_ROLE_ID = "PUT_LEADERSHIP_ROLE_ID_HERE";
+const LEADERSHIP_ROLE_ID = "1479585915037941872";
 const WOM_LINK = "https://wiseoldman.net/groups/24109";
 
 const COIN = "<:Coins:1480262838323773625>";
@@ -422,9 +423,22 @@ const commands = [
         .setName('timezone')
         .setDescription('Set your timezone'),
 
-    new SlashCommandBuilder()
+new SlashCommandBuilder()
         .setName('lfgpanel')
-        .setDescription('Create the LFG control panel')
+        .setDescription('Create the LFG control panel'),
+
+    new SlashCommandBuilder()
+        .setName('recordattendance')
+        .setDescription('Record attendance from a clan event (Leadership only)')
+        .addStringOption(option =>
+            option.setName('data')
+                .setDescription('Paste the full attendance block here')
+                .setRequired(true)
+        ),
+
+    new SlashCommandBuilder()
+        .setName('eventattendance')
+        .setDescription('Check your clan event attendance count')
 ].map(c => c.toJSON());
 
 const rest = new REST({ version: '10' }).setToken(TOKEN);
@@ -447,6 +461,8 @@ client.on('guildMemberAdd', async () => {
 
 client.on('guildMemberRemove', async (member) => {
     try {
+        db.prepare(`DELETE FROM attendance WHERE discord_id = ?`).run(member.id);
+
         const channel = await member.guild.channels.fetch(RECRUIT_CHANNEL_ID);
         if (!channel) return;
         if (channel.type !== ChannelType.GuildText) return;
@@ -816,6 +832,85 @@ client.on('interactionCreate', async interaction => {
     if (interaction.commandName === 'timezone') {
         await interaction.reply({
             content: "Timezone dropdown setup is coming next.",
+            ephemeral: true
+        });
+        return;
+    }
+if (interaction.commandName === 'recordattendance') {
+        const member = interaction.member;
+
+        if (!member.roles.cache.has(LEADERSHIP_ROLE_ID)) {
+            await interaction.reply({
+                content: "Only leadership can record attendance.",
+                ephemeral: true
+            });
+            return;
+        }
+
+        const raw = interaction.options.getString('data');
+        const eventDate = new Date().toLocaleDateString('en-US', {
+            year: 'numeric', month: 'long', day: 'numeric'
+        });
+
+        const lines = raw.split('\n');
+        const recorded = [];
+        const notFound = [];
+
+        for (const line of lines) {
+            if (!line.includes('|')) continue;
+            const parts = line.split('|');
+            if (parts.length < 2) continue;
+
+            const rsn = parts[0].trim();
+            if (!rsn || rsn.toLowerCase() === 'name') continue;
+
+            const guildMember = interaction.guild.members.cache.find(m => {
+                const nick = (m.nickname || m.displayName || '').toLowerCase();
+                return nick === rsn.toLowerCase();
+            });
+
+            if (guildMember) {
+                db.prepare(`
+                    INSERT INTO attendance (discord_id, rsn, event_date)
+                    VALUES (?, ?, ?)
+                `).run(guildMember.id, rsn, eventDate);
+                recorded.push(rsn);
+            } else {
+                notFound.push(rsn);
+            }
+        }
+
+        let response = `✅ **Attendance recorded for ${eventDate}**\n`;
+        response += `👥 **${recorded.length} member(s) credited:** ${recorded.join(', ') || 'None'}\n`;
+
+        if (notFound.length > 0) {
+            response += `⚠️ **Could not find (nickname mismatch?):** ${notFound.join(', ')}`;
+        }
+
+        await interaction.reply({ content: response, ephemeral: true });
+        return;
+    }
+
+    if (interaction.commandName === 'eventattendance') {
+        const member = interaction.member;
+        const rsn = member.nickname || member.displayName || interaction.user.username;
+
+        const rows = db.prepare(`
+            SELECT event_date FROM attendance WHERE discord_id = ? ORDER BY created_at DESC
+        `).all(interaction.user.id);
+
+        if (rows.length === 0) {
+            await interaction.reply({
+                content: `📋 **${rsn}** has no recorded event attendance yet.`,
+                ephemeral: true
+            });
+            return;
+        }
+
+        const eventList = rows.map((r, i) => `${i + 1}. ${r.event_date}`).join('\n');
+
+        await interaction.reply({
+            content: `📋 **Event Attendance for ${rsn}**\n**Total: ${rows.length}**\n\n${eventList}`,
             ephemeral: true
         });
         return;
