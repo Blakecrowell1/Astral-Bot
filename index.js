@@ -852,23 +852,16 @@ if (interaction.commandName === 'recordattendance') {
             year: 'numeric', month: 'long', day: 'numeric'
         });
 
-const normalized = raw.replace(/`/g, '').replace(/\r/g, '');
-        const lines = normalized.split(/\n|(?=\b\w[\w\s]+ \| \d{2}:\d{2})/).map(l => l.trim()).filter(l => l);
+const normalized = raw.replace(/`/g, '');
+        const lines = normalized.split(/\n/).map(l => l.trim()).filter(l => l);
         const recorded = [];
         const notFound = [];
 
 const debugNames = [];
-        for (const line of lines) {
-            if (!line.includes('|')) continue;
-            const parts = line.split('|');
-            if (parts.length < 3) continue;
-
-            const rsn = parts[0].trim();
-            if (!rsn) continue;
-            if (rsn.toLowerCase() === 'name') continue;
-            if (rsn.toLowerCase().includes('threshold')) continue;
-            if (rsn.startsWith('-')) continue;
-            if (!/\S/.test(rsn)) continue;
+        const matches = [...normalized.matchAll(/([A-Za-z0-9 _'\-]+?)\s*\|\s*\d{2}:\d{2}\s*\|\s*[-\w]*/g)];
+        for (const match of matches) {
+            const rsn = match[1].trim();
+            if (!rsn || rsn.toLowerCase() === 'name' || rsn.toLowerCase() === 'time') continue;
             debugNames.push(rsn);
 
 await interaction.guild.members.fetch();
