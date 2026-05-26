@@ -34,6 +34,15 @@ async function initDB() {
         )
     `);
 
+    db.run(`
+        CREATE TABLE IF NOT EXISTS donations (
+            discord_id TEXT NOT NULL,
+            rsn TEXT NOT NULL,
+            amount INTEGER NOT NULL,
+            donated_at TEXT DEFAULT (datetime('now'))
+        )
+    `);
+
     // Add event_name column if it doesn't exist (for existing databases)
     try {
         db.run(`ALTER TABLE attendance ADD COLUMN event_name TEXT NOT NULL DEFAULT 'Event'`);
@@ -112,6 +121,23 @@ function getRecruiter(recruitId) {
     return result[0].values[0][0];
 }
 
+function recordDonation(discordId, rsn, amount) {
+    db.run(
+        `INSERT INTO donations (discord_id, rsn, amount) VALUES (?, ?, ?)`,
+        [discordId, rsn, amount]
+    );
+    saveDB();
+}
+
+function getTotalDonations(discordId) {
+    const result = db.exec(
+        `SELECT COALESCE(SUM(amount), 0) FROM donations WHERE discord_id = ?`,
+        [discordId]
+    );
+    if (!result.length) return 0;
+    return result[0].values[0][0];
+}
+
 module.exports = {
     initDB,
     recordAttendance,
@@ -121,5 +147,7 @@ module.exports = {
     addRecruit,
     getRecruits,
     removeRecruit,
-    getRecruiter
+    getRecruiter,
+    recordDonation,
+    getTotalDonations
 };

@@ -24,7 +24,9 @@ const {
     addRecruit,
     getRecruits,
     removeRecruit,
-    getRecruiter
+    getRecruiter,
+    recordDonation,
+    getTotalDonations
 } = require('./database');
 
 const TOKEN = process.env.TOKEN;
@@ -47,30 +49,13 @@ const DATA_FILE = "coffer.json";
 const ASTRAL_BLUE = 0x93BFD6;
 
 const PVM_ACTIVITIES = [
-    "ToA",
-    "CoX",
-    "ToB",
-    "Hueycoatl",
-    "Wilderness Bosses",
-    "Yama",
-    "God Wars Dungeon",
-    "Royal Titans",
-    "Nex",
-    "Nightmare",
-    "Dagannoth Kings",
-    "Corporeal Beast"
+    "ToA", "CoX", "ToB", "Hueycoatl", "Wilderness Bosses", "Yama",
+    "God Wars Dungeon", "Royal Titans", "Nex", "Nightmare", "Dagannoth Kings", "Corporeal Beast"
 ];
 
 const MINIGAME_ACTIVITIES = [
-    "Barbarian Assault",
-    "Pest Control",
-    "Soul Wars",
-    "Castle Wars",
-    "Guardians of the Rift",
-    "Wintertodt",
-    "Tempoross",
-    "Volcanic Mine",
-    "Shooting Stars"
+    "Barbarian Assault", "Pest Control", "Soul Wars", "Castle Wars",
+    "Guardians of the Rift", "Wintertodt", "Tempoross", "Volcanic Mine", "Shooting Stars"
 ];
 
 const ACTIVITY_MAP = {
@@ -86,7 +71,6 @@ const ACTIVITY_MAP = {
     "Nightmare": { type: "PvM", roleId: "1479614048927613028" },
     "Dagannoth Kings": { type: "PvM", roleId: "1479614231711318086" },
     "Corporeal Beast": { type: "PvM", roleId: "1479613807373586565" },
-
     "Barbarian Assault": { type: "Minigame", roleId: "1479635786168271084" },
     "Pest Control": { type: "Minigame", roleId: "1479635832133517484" },
     "Soul Wars": { type: "Minigame", roleId: "1479635856779251782" },
@@ -99,21 +83,13 @@ const ACTIVITY_MAP = {
 };
 
 const TEAM_LIMITS = {
-    "Duo": 2,
-    "Trio": 3,
-    "4 Man": 4,
-    "5 Man": 5,
-    "Mass": 999,
-    "Learners": 999
+    "Duo": 2, "Trio": 3, "4 Man": 4, "5 Man": 5, "Mass": 999, "Learners": 999
 };
 
 const lfgDrafts = new Map();
 const activeLfgPosts = new Map();
 
-let data = {
-    total: 0,
-    messageId: null
-};
+let data = { total: 0, messageId: null };
 
 if (fs.existsSync(DATA_FILE)) {
     try {
@@ -343,6 +319,9 @@ const commands = [
         .setDescription('Add GP to the clan coffer')
         .addStringOption(option =>
             option.setName('amount').setDescription('Example: 25m, 500k, 2b').setRequired(true)
+        )
+        .addUserOption(option =>
+            option.setName('member').setDescription('Member who donated (optional)').setRequired(false)
         ),
 
     new SlashCommandBuilder()
@@ -399,14 +378,14 @@ const commands = [
 
     new SlashCommandBuilder()
         .setName('removerecruit')
-        .setDescription('Remove a recruit from a recruiter\'s record (Leadership only)')
+        .setDescription("Remove a recruit from a recruiter's record (Leadership only)")
         .addUserOption(option =>
             option.setName('recruit').setDescription('The recruit to remove').setRequired(true)
         ),
 
     new SlashCommandBuilder()
         .setName('profile')
-        .setDescription('View a clan member\'s profile')
+        .setDescription("View a clan member's profile")
         .addUserOption(option =>
             option.setName('member').setDescription('Member to look up (leave blank to view your own)').setRequired(false)
         ),
@@ -464,19 +443,15 @@ client.on('interactionCreate', async interaction => {
 
         if (interaction.customId === 'create_lfg') {
             const member = interaction.member;
-
             if (!member.roles.cache.has(MEMBER_ROLE_ID)) {
                 await interaction.reply({ content: "You must have the Member role to create LFG events.", ephemeral: true });
                 return;
             }
-
             if (interaction.channel.id !== LFG_CHANNEL_ID) {
                 await interaction.reply({ content: "LFG events can only be created in the LFG channel.", ephemeral: true });
                 return;
             }
-
             lfgDrafts.set(interaction.user.id, getEmptyDraft());
-
             await interaction.reply({
                 content: buildLfgPanelContent(interaction.user.id),
                 components: buildLfgPanelComponents(interaction.user.id),
@@ -506,24 +481,19 @@ client.on('interactionCreate', async interaction => {
 
         if (interaction.customId === 'lfg_submit') {
             const draft = getDraft(interaction.user.id);
-
             if (!draft.activityType || !draft.activityName || !draft.teamSize || !draft.startTime) {
                 await interaction.reply({ content: "Please finish all dropdown selections before submitting.", ephemeral: true });
                 return;
             }
-
             const activityInfo = ACTIVITY_MAP[draft.activityName];
-
             if (!activityInfo) {
                 await interaction.reply({ content: "That activity is not recognized.", ephemeral: true });
                 return;
             }
-
             if (activityInfo.type !== draft.activityType) {
                 await interaction.reply({ content: "Your Activity Type and Activity do not match. Please fix them and try again.", ephemeral: true });
                 return;
             }
-
             const newPost = {
                 hostId: interaction.user.id,
                 activityType: draft.activityType,
@@ -536,33 +506,26 @@ client.on('interactionCreate', async interaction => {
                 interested: [interaction.user.id],
                 closed: false
             };
-
             const isFull = newPost.interested.length >= newPost.limit;
-
             const sentMessage = await interaction.channel.send({
                 content: `<@&${newPost.roleId}>`,
                 embeds: [buildLfgEmbed(newPost)],
                 components: buildEventButtons(isFull, false)
             });
-
             activeLfgPosts.set(sentMessage.id, newPost);
             lfgDrafts.delete(interaction.user.id);
-
             await interaction.update({ content: "LFG posted successfully.", components: [] });
             return;
         }
 
         if (interaction.customId === 'lfg_join') {
             const post = activeLfgPosts.get(interaction.message.id);
-
             if (!post) { await interaction.reply({ content: "This LFG post is no longer active.", ephemeral: true }); return; }
             if (post.closed) { await interaction.reply({ content: "This group is closed.", ephemeral: true }); return; }
             if (post.interested.includes(interaction.user.id)) { await interaction.reply({ content: "You are already in this group.", ephemeral: true }); return; }
             if (post.interested.length >= post.limit) { await interaction.reply({ content: "This group is already full.", ephemeral: true }); return; }
-
             post.interested.push(interaction.user.id);
             const isFull = post.interested.length >= post.limit;
-
             await interaction.update({
                 content: `<@&${post.roleId}>`,
                 embeds: [buildLfgEmbed(post)],
@@ -573,15 +536,12 @@ client.on('interactionCreate', async interaction => {
 
         if (interaction.customId === 'lfg_leave') {
             const post = activeLfgPosts.get(interaction.message.id);
-
             if (!post) { await interaction.reply({ content: "This LFG post is no longer active.", ephemeral: true }); return; }
             if (post.closed) { await interaction.reply({ content: "This group is closed.", ephemeral: true }); return; }
             if (interaction.user.id === post.hostId) { await interaction.reply({ content: "The host cannot leave their own group.", ephemeral: true }); return; }
             if (!post.interested.includes(interaction.user.id)) { await interaction.reply({ content: "You are not currently in this group.", ephemeral: true }); return; }
-
             post.interested = post.interested.filter(id => id !== interaction.user.id);
             const isFull = post.interested.length >= post.limit;
-
             await interaction.update({
                 content: `<@&${post.roleId}>`,
                 embeds: [buildLfgEmbed(post)],
@@ -592,25 +552,19 @@ client.on('interactionCreate', async interaction => {
 
         if (interaction.customId === 'lfg_close') {
             const post = activeLfgPosts.get(interaction.message.id);
-
             if (!post) { await interaction.reply({ content: "This LFG post is no longer active.", ephemeral: true }); return; }
-
             const member = interaction.member;
             const isLeader = member.roles.cache.has(LEADERSHIP_ROLE_ID);
-
             if (interaction.user.id !== post.hostId && !isLeader) {
                 await interaction.reply({ content: "Only the host or leadership can close this group.", ephemeral: true });
                 return;
             }
-
             post.closed = true;
-
             await interaction.update({
                 content: `<@&${post.roleId}>`,
                 embeds: [buildLfgEmbed(post)],
                 components: buildEventButtons(false, true)
             });
-
             setTimeout(async () => {
                 try {
                     await interaction.message.delete();
@@ -619,21 +573,17 @@ client.on('interactionCreate', async interaction => {
                     console.log("Could not delete closed LFG post:", err.message);
                 }
             }, 30 * 60 * 1000);
-
             return;
         }
     }
 
     if (interaction.isStringSelectMenu()) {
         const draft = getDraft(interaction.user.id);
-
         if (interaction.customId === 'lfg_type') { draft.activityType = interaction.values[0]; draft.activityName = ""; }
         if (interaction.customId === 'lfg_activity') draft.activityName = interaction.values[0];
         if (interaction.customId === 'lfg_team') draft.teamSize = interaction.values[0];
         if (interaction.customId === 'lfg_time') draft.startTime = interaction.values[0];
-
         lfgDrafts.set(interaction.user.id, draft);
-
         await interaction.update({
             content: buildLfgPanelContent(interaction.user.id),
             components: buildLfgPanelComponents(interaction.user.id)
@@ -646,7 +596,6 @@ client.on('interactionCreate', async interaction => {
             const draft = getDraft(interaction.user.id);
             draft.notes = interaction.fields.getTextInputValue('notes') || '';
             lfgDrafts.set(interaction.user.id, draft);
-
             await interaction.reply({
                 content: "Notes saved. Go back to your LFG panel and press Submit LFG when ready.",
                 ephemeral: true
@@ -664,7 +613,7 @@ client.on('interactionCreate', async interaction => {
 
     if (interaction.commandName === "add" || interaction.commandName === "remove") {
         if (interaction.user.id !== OWNER_ID) {
-            await interaction.reply({ content: "Only Bruin can change the coffer.", ephemeral: true });
+            await interaction.reply({ content: "Only Raleigh can change the coffer.", ephemeral: true });
             return;
         }
 
@@ -676,9 +625,17 @@ client.on('interactionCreate', async interaction => {
         }
 
         if (interaction.commandName === "add") {
+            const donatingMember = interaction.options.getMember('member');
+            if (donatingMember) {
+                const rsn = donatingMember.nickname || donatingMember.displayName || donatingMember.user.username;
+                recordDonation(donatingMember.id, rsn, amount);
+            }
             data.total += amount;
             saveData();
-            await interaction.reply(`Added ${format(amount)}. ${COIN} New Total: ${format(data.total)}`);
+            const donorText = donatingMember
+                ? ` from **${donatingMember.nickname || donatingMember.displayName}**`
+                : '';
+            await interaction.reply(`Added ${format(amount)}${donorText}. ${COIN} New Total: ${format(data.total)}`);
             await ensureCofferMessage(client);
             return;
         }
@@ -699,30 +656,24 @@ client.on('interactionCreate', async interaction => {
 
     if (interaction.commandName === 'recordattendance') {
         const member = interaction.member;
-
         if (!member.roles.cache.has(LEADERSHIP_ROLE_ID)) {
             await interaction.reply({ content: "Only leadership can record attendance.", ephemeral: true });
             return;
         }
-
         const eventName = interaction.options.getString('event');
         const raw = interaction.options.getString('data');
         const eventDate = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-
         const normalized = raw.replace(/`/g, '');
         const recorded = [];
         const notFound = [];
-
         const matches = [...normalized.matchAll(/([A-Za-z0-9 _'\-]+)\s*\|\s*\d{2}:\d{2}\s*\|/g)];
         for (const match of matches) {
             const rsn = match[1].trim().replace(/^Late\s*/i, '').replace(/^-\s*/i, '').trim();
             if (!rsn || rsn.toLowerCase() === 'name') continue;
-
             const guildMember = interaction.guild.members.cache.find(m => {
                 const nick = (m.nickname || m.displayName || '').toLowerCase();
                 return nick === rsn.toLowerCase();
             });
-
             if (guildMember) {
                 recordAttendance(guildMember.id, rsn, eventDate, eventName);
                 recorded.push(rsn);
@@ -730,30 +681,24 @@ client.on('interactionCreate', async interaction => {
                 notFound.push(rsn);
             }
         }
-
         let response = `✅ **Attendance recorded for ${eventDate} — ${eventName}**\n`;
         response += `👥 **${recorded.length} member(s) credited:** ${recorded.join(', ') || 'None'}\n`;
         if (notFound.length > 0) response += `⚠️ **Could not find (nickname mismatch?):** ${notFound.join(', ')}`;
-
         await interaction.reply({ content: response, ephemeral: true });
         return;
     }
 
     if (interaction.commandName === 'addattendance') {
         const member = interaction.member;
-
         if (!member.roles.cache.has(LEADERSHIP_ROLE_ID)) {
             await interaction.reply({ content: "Only leadership can manually add attendance.", ephemeral: true });
             return;
         }
-
         const target = interaction.options.getMember('member');
         const eventName = interaction.options.getString('event');
         const rsn = target.nickname || target.displayName || target.user.username;
         const eventDate = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-
         recordAttendance(target.id, rsn, eventDate, eventName);
-
         await interaction.reply({
             content: `✅ Manually added 1 attendance credit for **${rsn}** — ${eventName} on ${eventDate}.`,
             ephemeral: true
@@ -763,23 +708,18 @@ client.on('interactionCreate', async interaction => {
 
     if (interaction.commandName === 'removeattendance') {
         const member = interaction.member;
-
         if (!member.roles.cache.has(LEADERSHIP_ROLE_ID)) {
             await interaction.reply({ content: "Only leadership can remove attendance.", ephemeral: true });
             return;
         }
-
         const target = interaction.options.getMember('member');
         const rsn = target.nickname || target.displayName || target.user.username;
         const rows = getAttendance(target.id);
-
         if (rows.length === 0) {
             await interaction.reply({ content: `⚠️ **${rsn}** has no attendance records to remove.`, ephemeral: true });
             return;
         }
-
         removeMostRecentAttendance(target.id);
-
         await interaction.reply({
             content: `✅ Removed the most recent attendance entry for **${rsn}**. They now have **${rows.length - 1}** event(s) on record.`,
             ephemeral: true
@@ -789,19 +729,15 @@ client.on('interactionCreate', async interaction => {
 
     if (interaction.commandName === 'addrecruit') {
         const member = interaction.member;
-
         if (!member.roles.cache.has(LEADERSHIP_ROLE_ID)) {
             await interaction.reply({ content: "Only leadership can record recruits.", ephemeral: true });
             return;
         }
-
         const recruit = interaction.options.getMember('recruit');
         const recruiter = interaction.options.getMember('recruiter');
         const recruitRsn = recruit.nickname || recruit.displayName || recruit.user.username;
         const recruiterRsn = recruiter.nickname || recruiter.displayName || recruiter.user.username;
-
         addRecruit(recruiter.id, recruit.id, recruitRsn);
-
         await interaction.reply({
             content: `✅ **${recruitRsn}** has been added to **${recruiterRsn}**'s recruit list.`,
             ephemeral: true
@@ -811,26 +747,20 @@ client.on('interactionCreate', async interaction => {
 
     if (interaction.commandName === 'removerecruit') {
         const member = interaction.member;
-
         if (!member.roles.cache.has(LEADERSHIP_ROLE_ID)) {
             await interaction.reply({ content: "Only leadership can remove recruits.", ephemeral: true });
             return;
         }
-
         const recruit = interaction.options.getMember('recruit');
         const recruitRsn = recruit.nickname || recruit.displayName || recruit.user.username;
         const recruiterId = getRecruiter(recruit.id);
-
         if (!recruiterId) {
             await interaction.reply({ content: `⚠️ **${recruitRsn}** is not linked to any recruiter.`, ephemeral: true });
             return;
         }
-
         const recruiterMember = interaction.guild.members.cache.get(recruiterId);
         const recruiterRsn = recruiterMember ? (recruiterMember.nickname || recruiterMember.displayName) : 'Unknown';
-
         removeRecruit(recruit.id);
-
         await interaction.reply({
             content: `✅ **${recruitRsn}** has been removed from **${recruiterRsn}**'s recruit list.`,
             ephemeral: true
@@ -848,6 +778,7 @@ client.on('interactionCreate', async interaction => {
 
         const attendanceRows = getAttendance(target.id);
         const recruitRows = getRecruits(target.id);
+        const totalDonated = getTotalDonations(target.id);
 
         const attendanceList = attendanceRows.length > 0
             ? attendanceRows.slice(0, 10).map((r, i) => `${i + 1}. ${r.event_date} — ${r.event_name}`).join('\n')
@@ -865,6 +796,7 @@ client.on('interactionCreate', async interaction => {
                 { name: '📅 Days in Clan', value: `${daysInClan} days`, inline: true },
                 { name: '📋 Events Attended', value: `${attendanceRows.length}`, inline: true },
                 { name: '👥 Recruits', value: `${recruitRows.length}`, inline: true },
+                { name: `${COIN} Total Donated`, value: totalDonated > 0 ? format(totalDonated) : '0gp', inline: true },
                 { name: '📜 Attendance History (Last 10)', value: attendanceList, inline: false },
                 { name: '🎯 Recruited Members', value: recruitList, inline: false }
             )
@@ -877,27 +809,22 @@ client.on('interactionCreate', async interaction => {
 
     if (interaction.commandName === 'lfgpanel') {
         const member = interaction.member;
-
         if (!member.roles.cache.has(MEMBER_ROLE_ID)) {
             await interaction.reply({ content: "You must have the Member role to use this.", ephemeral: true });
             return;
         }
-
         if (interaction.channel.id !== LFG_CHANNEL_ID) {
             await interaction.reply({ content: "This command can only be used in the LFG channel.", ephemeral: true });
             return;
         }
-
         const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder().setCustomId('create_lfg').setLabel('Create LFG').setStyle(ButtonStyle.Success)
         );
-
         const embed = new EmbedBuilder()
             .setColor(ASTRAL_BLUE)
             .setTitle("Astral Group Finder")
             .setDescription(`Create a group for **PvM** or **minigame** content.\n\nPress **Create LFG** below to start a group event.`)
             .setFooter({ text: "Astral Clan Event System" });
-
         await interaction.reply({ content: "LFG control panel created.", ephemeral: true });
         await interaction.channel.send({ embeds: [embed], components: [row] });
         return;
