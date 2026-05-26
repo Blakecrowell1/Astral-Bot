@@ -20,9 +20,26 @@ async function initDB() {
             discord_id TEXT NOT NULL,
             rsn TEXT NOT NULL,
             event_date TEXT NOT NULL,
+            event_name TEXT NOT NULL DEFAULT 'Event',
             created_at TEXT DEFAULT (datetime('now'))
         )
     `);
+
+    db.run(`
+        CREATE TABLE IF NOT EXISTS recruits (
+            recruiter_id TEXT NOT NULL,
+            recruit_id TEXT NOT NULL,
+            recruit_rsn TEXT NOT NULL,
+            recruited_at TEXT DEFAULT (datetime('now'))
+        )
+    `);
+
+    // Add event_name column if it doesn't exist (for existing databases)
+    try {
+        db.run(`ALTER TABLE attendance ADD COLUMN event_name TEXT NOT NULL DEFAULT 'Event'`);
+    } catch (e) {
+        // Column already exists, ignore
+    }
 
     saveDB();
 }
@@ -32,21 +49,21 @@ function saveDB() {
     fs.writeFileSync(DB_FILE, Buffer.from(data));
 }
 
-function recordAttendance(discordId, rsn, eventDate) {
+function recordAttendance(discordId, rsn, eventDate, eventName) {
     db.run(
-        `INSERT INTO attendance (discord_id, rsn, event_date) VALUES (?, ?, ?)`,
-        [discordId, rsn, eventDate]
+        `INSERT INTO attendance (discord_id, rsn, event_date, event_name) VALUES (?, ?, ?, ?)`,
+        [discordId, rsn, eventDate, eventName || 'Event']
     );
     saveDB();
 }
 
 function getAttendance(discordId) {
     const result = db.exec(
-        `SELECT event_date FROM attendance WHERE discord_id = ? ORDER BY created_at DESC`,
+        `SELECT event_date, event_name FROM attendance WHERE discord_id = ? ORDER BY created_at DESC`,
         [discordId]
     );
     if (!result.length) return [];
-    return result[0].values.map(row => ({ event_date: row[0] }));
+    return result[0].values.map(row => ({ event_date: row[0], event_name: row[1] }));
 }
 
 function deleteAttendance(discordId) {
@@ -64,4 +81,45 @@ function removeMostRecentAttendance(discordId) {
     saveDB();
 }
 
-module.exports = { initDB, recordAttendance, getAttendance, deleteAttendance, removeMostRecentAttendance };
+function addRecruit(recruiterId, recruitId, recruitRsn) {
+    db.run(
+        `INSERT INTO recruits (recruiter_id, recruit_id, recruit_rsn) VALUES (?, ?, ?)`,
+        [recruiterId, recruitId, recruitRsn]
+    );
+    saveDB();
+}
+
+function getRecruits(recruiterId) {
+    const result = db.exec(
+        `SELECT recruit_id, recruit_rsn, recruited_at FROM recruits WHERE recruiter_id = ? ORDER BY recruited_at DESC`,
+        [recruiterId]
+    );
+    if (!result.length) return [];
+    return result[0].values.map(row => ({ recruit_id: row[0], recruit_rsn: row[1], recruited_at: row[2] }));
+}
+
+function removeRecruit(recruitId) {
+    db.run(`DELETE FROM recruits WHERE recruit_id = ?`, [recruitId]);
+    saveDB();
+}
+
+function getRecruiter(recruitId) {
+    const result = db.exec(
+        `SELECT recruiter_id FROM recruits WHERE recruit_id = ?`,
+        [recruitId]
+    );
+    if (!result.length) return null;
+    return result[0].values[0][0];
+}
+
+module.exports = {
+    initDB,
+    recordAttendance,
+    getAttendance,
+    deleteAttendance,
+    removeMostRecentAttendance,
+    addRecruit,
+    getRecruits,
+    removeRecruit,
+    getRecruiter
+};
