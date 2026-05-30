@@ -15,6 +15,7 @@ const {
     EmbedBuilder
 } = require('discord.js');
 const fs = require('fs');
+const fetch = require('node-fetch');
 const {
     initDB,
     recordAttendance,
@@ -216,14 +217,18 @@ async function postAttendancePanel(client) {
         const embed = new EmbedBuilder()
             .setColor(ASTRAL_BLUE)
             .setTitle('📋 Event Attendance Submission')
-            .setDescription('Click **Submit Attendance** below to record attendance for a clan event.\n\nYou will be prompted to paste the RuneLite attendance data and name the event.')
+            .setDescription('Use the buttons below to record clan event attendance.\n\n📋 **Hosted Event** — Paste RuneLite attendance data\n🏆 **WOM Competition** — Pull results from Wise Old Man')
             .setFooter({ text: 'Astral RS Clan • Leadership Only' });
 
         const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
                 .setCustomId('submit_attendance')
-                .setLabel('📋 Submit Attendance')
-                .setStyle(ButtonStyle.Primary)
+                .setLabel('📋 Hosted Event')
+                .setStyle(ButtonStyle.Primary),
+            new ButtonBuilder()
+                .setCustomId('submit_wom')
+                .setLabel('🏆 WOM Competition')
+                .setStyle(ButtonStyle.Success)
         );
 
         await channel.send({ embeds: [embed], components: [row] });
@@ -486,6 +491,37 @@ client.on('interactionCreate', async interaction => {
             return;
         }
 
+        if (interaction.customId === 'submit_wom') {
+            const member = interaction.member;
+            const hasRole = member.roles.cache.has(LEADERSHIP_ROLE_ID) ||
+                            member.roles.cache.has(EVENT_STAFF_ROLE_ID) ||
+                            member.roles.cache.has(EVENT_TEAM_LEAD_ROLE_ID);
+
+            if (!hasRole) {
+                await interaction.reply({ content: "You don't have permission to submit WOM competition results.", ephemeral: true });
+                return;
+            }
+
+            const row = new ActionRowBuilder().addComponents(
+                new StringSelectMenuBuilder()
+                    .setCustomId('wom_event_type')
+                    .setPlaceholder('Select event type')
+                    .addOptions(
+                        { label: 'Skill of the Week (100k XP)', value: 'skill', emoji: '⚔️' },
+                        { label: 'Boss of the Week (50 Kills)', value: 'boss', emoji: '💀' }
+                    )
+            );
+
+            await interaction.reply({
+                content: '🏆 **WOM Competition — Select Event Type**
+
+What type of competition was this?',
+                components: [row],
+                ephemeral: true
+            });
+            return;
+        }
+
         if (interaction.customId === 'create_lfg') {
             const member = interaction.member;
             if (!member.roles.cache.has(MEMBER_ROLE_ID)) {
@@ -622,6 +658,38 @@ client.on('interactionCreate', async interaction => {
 
     if (interaction.isStringSelectMenu()) {
         const draft = getDraft(interaction.user.id);
+        if (interaction.customId === 'wom_event_type') {
+            const eventType = interaction.values[0];
+            const threshold = eventType === 'skill' ? 100000 : 50;
+            const thresholdLabel = eventType === 'skill' ? '100k XP' : '50 kills';
+
+            const modal = new ModalBuilder()
+                .setCustomId(`wom_submit_modal_${eventType}_${threshold}`)
+                .setTitle('WOM Competition Details');
+
+            const compIdInput = new TextInputBuilder()
+                .setCustomId('competition_id')
+                .setLabel('WOM Competition ID')
+                .setStyle(TextInputStyle.Short)
+                .setPlaceholder('e.g. 12345 (from the WOM competition URL)')
+                .setRequired(true);
+
+            const eventNameInput = new TextInputBuilder()
+                .setCustomId('event_name')
+                .setLabel('Event Name')
+                .setStyle(TextInputStyle.Short)
+                .setPlaceholder('e.g. SotW Week 3, BotW - Zulrah')
+                .setRequired(true);
+
+            modal.addComponents(
+                new ActionRowBuilder().addComponents(compIdInput),
+                new ActionRowBuilder().addComponents(eventNameInput)
+            );
+
+            await interaction.showModal(modal);
+            return;
+        }
+
         if (interaction.customId === 'lfg_type') { draft.activityType = interaction.values[0]; draft.activityName = ""; }
         if (interaction.customId === 'lfg_activity') draft.activityName = interaction.values[0];
         if (interaction.customId === 'lfg_team') draft.teamSize = interaction.values[0];
@@ -686,6 +754,82 @@ client.on('interactionCreate', async interaction => {
                 }
             } catch (err) {
                 console.log("Could not post to event log channel:", err.message);
+            }
+            return;
+        }
+
+        if (interaction.customId.startsWith('wom_submit_modal_')) {
+            const parts = interaction.customId.split('_');
+            const eventType = parts[3];
+            const threshold = parseInt(parts[4]);
+            const thresholdLabel = eventType === 'skill' ? '100k XP' : '50 kills';
+
+            const competitionId = interaction.fields.getTextInputValue('competition_id').trim();
+            const eventName = interaction.fields.getTextInputValue('event_name').trim();
+            const eventDate = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+
+            await interaction.deferReply({ ephemeral: true });
+
+            try {
+                const res = await fetch(`https://api.wiseoldman.net/v2/competitions/${competitionId}/top5`);
+                const allRes = await fetch(`https://api.wiseoldman.net/v2/competitions/${competitionId}/participants`);
+
+                if (!allRes.ok) {
+                    await interaction.editReply({ content: `⚠️ Could not find WOM competition with ID **${competitionId}**. Please check the ID and try again.` });
+                    return;
+                }
+
+                const participants = await allRes.json();
+                const qualified = participants.filter(p => {
+                    const gained = p.progress?.gained ?? 0;
+                    return gained >= threshold;
+                });
+
+                const recorded = [];
+                const notFound = [];
+                const belowThreshold = participants.length - qualified.length;
+
+                for (const participant of qualified) {
+                    const rsn = participant.player?.displayName || participant.player?.username;
+                    if (!rsn) continue;
+
+                    const guildMember = interaction.guild.members.cache.find(m => {
+                        const nick = (m.nickname || m.displayName || '').toLowerCase();
+                        return nick === rsn.toLowerCase();
+                    });
+
+                    if (guildMember) {
+                        recordAttendance(guildMember.id, rsn, eventDate, eventName);
+                        recorded.push(rsn);
+                    } else {
+                        notFound.push(rsn);
+                    }
+                }
+
+                await interaction.editReply({ content: `✅ WOM competition results recorded!` });
+
+                // Post results to event log channel
+                const logChannel = await interaction.guild.channels.fetch(EVENT_LOG_CHANNEL_ID);
+                if (logChannel && logChannel.type === ChannelType.GuildText) {
+                    const resultEmbed = new EmbedBuilder()
+                        .setColor(ASTRAL_BLUE)
+                        .setTitle(`🏆 WOM Competition — ${eventName}`)
+                        .addFields(
+                            { name: '📅 Date', value: eventDate, inline: true },
+                            { name: '👥 Members Credited', value: `${recorded.length}`, inline: true },
+                            { name: '📊 Threshold', value: thresholdLabel, inline: true },
+                            { name: '❌ Below Threshold', value: `${belowThreshold}`, inline: true },
+                            { name: '✅ Credited Members', value: recorded.length > 0 ? recorded.map(r => `• ${r}`).join('\n') : 'None', inline: false },
+                            notFound.length > 0 ? { name: '⚠️ Not Found (Nickname Mismatch?)', value: notFound.map(r => `• ${r}`).join('\n'), inline: false } : { name: '\u200b', value: '\u200b', inline: false }
+                        )
+                        .setFooter({ text: `Submitted by ${interaction.member.nickname || interaction.user.username} • WOM ID: ${competitionId}` })
+                        .setTimestamp();
+
+                    await logChannel.send({ embeds: [resultEmbed] });
+                }
+            } catch (err) {
+                console.log("WOM fetch error:", err.message);
+                await interaction.editReply({ content: `⚠️ Something went wrong fetching the WOM competition. Please try again.` });
             }
             return;
         }
