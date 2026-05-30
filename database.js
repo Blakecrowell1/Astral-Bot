@@ -178,6 +178,14 @@ function setCofferMessageId(messageId) {
     saveDB();
 }
 
+function removeDonation(discordId, amount) {
+    db.run(
+        `INSERT INTO donations (discord_id, rsn, amount) VALUES (?, (SELECT rsn FROM donations WHERE discord_id = ? ORDER BY donated_at DESC LIMIT 1), ?)`,
+        [discordId, discordId, -amount]
+    );
+    saveDB();
+}
+
 function updateRSN(discordId, newRsn) {
     db.run(`UPDATE attendance SET rsn = ? WHERE discord_id = ?`, [newRsn, discordId]);
     db.run(`UPDATE recruits SET recruit_rsn = ? WHERE recruit_id = ?`, [newRsn, discordId]);
@@ -201,5 +209,6 @@ module.exports = {
     setCofferTotal,
     getCofferMessageId,
     setCofferMessageId,
-    updateRSN
+    updateRSN,
+    removeDonation
 };

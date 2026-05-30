@@ -32,7 +32,8 @@ const {
     setCofferTotal,
     getCofferMessageId,
     setCofferMessageId,
-    updateRSN
+    updateRSN,
+    removeDonation
 } = require('./database');
 
 const TOKEN = process.env.TOKEN;
@@ -416,6 +417,18 @@ const commands = [
         .setDescription('Update your RSN and server nickname')
         .addStringOption(o => o.setName('newrsn').setDescription('Your new RSN').setRequired(true))
         .addUserOption(o => o.setName('member').setDescription('Member to update (Leadership only)').setRequired(false)),
+
+    new SlashCommandBuilder()
+        .setName('adddonation')
+        .setDescription('Manually add a donation credit for a member (Leadership only)')
+        .addUserOption(o => o.setName('member').setDescription('The member to credit').setRequired(true))
+        .addStringOption(o => o.setName('amount').setDescription('Amount to add e.g. 25m, 500k, 2b').setRequired(true)),
+
+    new SlashCommandBuilder()
+        .setName('removedonation')
+        .setDescription('Remove a donation amount from a member (Leadership only)')
+        .addUserOption(o => o.setName('member').setDescription('The member to adjust').setRequired(true))
+        .addStringOption(o => o.setName('amount').setDescription('Amount to remove e.g. 25m, 500k, 2b').setRequired(true)),
 
 ].map(c => c.toJSON());
 
@@ -1064,6 +1077,47 @@ client.on('interactionCreate', async interaction => {
             .setTimestamp();
 
         await interaction.reply({ embeds: [embed] });
+        return;
+    }
+
+    if (interaction.commandName === 'adddonation') {
+        if (!interaction.member.roles.cache.has(LEADERSHIP_ROLE_ID)) {
+            await interaction.reply({ content: "Only leadership can manually add donations.", ephemeral: true });
+            return;
+        }
+        const target = interaction.options.getMember('member');
+        const amount = parseGP(interaction.options.getString('amount'));
+        if (!amount || isNaN(amount) || amount <= 0) {
+            await interaction.reply({ content: "Enter a valid amount like 25m, 500k, or 2b.", ephemeral: true });
+            return;
+        }
+        const rsn = target.nickname || target.displayName || target.user.username;
+        recordDonation(target.id, rsn, amount);
+        const newTotal = getTotalDonations(target.id);
+        await interaction.reply({ content: `✅ Added **${format(amount)}** donation credit for **${rsn}**. Their total is now **${format(newTotal)}**.`, ephemeral: true });
+        return;
+    }
+
+    if (interaction.commandName === 'removedonation') {
+        if (!interaction.member.roles.cache.has(LEADERSHIP_ROLE_ID)) {
+            await interaction.reply({ content: "Only leadership can remove donations.", ephemeral: true });
+            return;
+        }
+        const target = interaction.options.getMember('member');
+        const amount = parseGP(interaction.options.getString('amount'));
+        if (!amount || isNaN(amount) || amount <= 0) {
+            await interaction.reply({ content: "Enter a valid amount like 25m, 500k, or 2b.", ephemeral: true });
+            return;
+        }
+        const rsn = target.nickname || target.displayName || target.user.username;
+        const currentTotal = getTotalDonations(target.id);
+        if (amount > currentTotal) {
+            await interaction.reply({ content: `⚠️ **${rsn}** only has **${format(currentTotal)}** in donations. Can't remove more than their current total.`, ephemeral: true });
+            return;
+        }
+        removeDonation(target.id, amount);
+        const newTotal = getTotalDonations(target.id);
+        await interaction.reply({ content: `✅ Removed **${format(amount)}** from **${rsn}**'s donations. Their total is now **${format(newTotal)}**.`, ephemeral: true });
         return;
     }
 
