@@ -216,9 +216,7 @@ async function postAttendancePanel(client) {
         const embed = new EmbedBuilder()
             .setColor(ASTRAL_BLUE)
             .setTitle('📋 Event Attendance Submission')
-            .setDescription('Click **Submit Attendance** below to record attendance for a clan event.
-
-You will be prompted to paste the RuneLite attendance data and name the event.')
+            .setDescription('Click **Submit Attendance** below to record attendance for a clan event.\n\nYou will be prompted to paste the RuneLite attendance data and name the event.')
             .setFooter({ text: 'Astral RS Clan • Leadership Only' });
 
         const row = new ActionRowBuilder().addComponents(
