@@ -44,7 +44,7 @@ const MEMBER_ROLE_ID = "1479586030058471530";
 const RECRUIT_CHANNEL_ID = "1479812369889624345";
 const STAFF_ROLE_ID = "1480285731955019806";
 const LEADERSHIP_ROLE_ID = "1479585915037941872";
-const BOT_COMMANDS_CHANNEL_ID = "1479599992346906676"; // Update this to your #bot-commands channel ID
+const BOT_COMMANDS_CHANNEL_ID = "1508520980035801169";
 const WOM_LINK = "https://wiseoldman.net/groups/24109";
 
 const COIN = "<:Coins:1480262838323773625>";
@@ -770,30 +770,17 @@ client.on('interactionCreate', async interaction => {
             ? recruitRows.map(r => `• ${r.recruit_rsn}`).join('\n')
             : 'No recruits yet.';
 
-        const w = 12;
-        const pad = (s) => { s = String(s); const l = Math.floor((w - s.length) / 2); const r = w - s.length - l; return ' '.repeat(Math.max(0,l)) + s + ' '.repeat(Math.max(0,r)); };
-        const bar = '\u2500'.repeat(w);
-        const tl = '\u250c', tr = '\u2510', bl = '\u2514', br = '\u2518', si = '\u2502';
-        const sp = '  ';
-
-        const statsBlock = [
-            `DAYS IN CLAN    EVENTS ATTENDED`,
-            `${tl}${bar}${tr}${sp}${tl}${bar}${tr}`,
-            `${si}${pad(daysInClan + ' days')}${si}${sp}${si}${pad(attendanceRows.length)}${si}`,
-            `${bl}${bar}${br}${sp}${bl}${bar}${br}`,
-            ``,
-            `RECRUITS        TOTAL DONATED`,
-            `${tl}${bar}${tr}${sp}${tl}${bar}${tr}`,
-            `${si}${pad(recruitRows.length)}${si}${sp}${si}${pad(totalDonated > 0 ? format(totalDonated) : '0gp')}${si}`,
-            `${bl}${bar}${br}${sp}${bl}${bar}${br}`,
-        ].join('\n');
-
         const embed = new EmbedBuilder()
             .setColor(ASTRAL_BLUE)
             .setTitle(`${rsn}'s Clan Profile`)
             .setThumbnail(target.user.displayAvatarURL({ dynamic: true }))
-            .setDescription('```\n' + statsBlock + '\n```')
             .addFields(
+                { name: '📅 Days in Clan', value: `**${daysInClan} days**`, inline: true },
+                { name: '📋 Events Attended', value: `**${attendanceRows.length}**`, inline: true },
+                { name: '\u200b', value: '\u200b', inline: true },
+                { name: '👥 Recruits', value: `**${recruitRows.length}**`, inline: true },
+                { name: '💰 Total Donated', value: `**${totalDonated > 0 ? format(totalDonated) : '0gp'}**`, inline: true },
+                { name: '\u200b', value: '\u200b', inline: true },
                 { name: '📜 Attendance History (Last 10)', value: attendanceList, inline: false },
                 { name: '🎯 Recruited Members', value: recruitList, inline: false }
             )
