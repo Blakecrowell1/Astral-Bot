@@ -31,7 +31,8 @@ const {
     getCofferTotal,
     setCofferTotal,
     getCofferMessageId,
-    setCofferMessageId
+    setCofferMessageId,
+    updateRSN
 } = require('./database');
 
 const TOKEN = process.env.TOKEN;
@@ -182,6 +183,7 @@ async function postCommandsList(client) {
                         '`/coffer` — Check the current clan coffer total',
                         '`/eventattendance` — Check your event attendance history',
                         '`/eventattendance @member` — Check another member\'s attendance',
+                        '`/updatersn [newrsn]` — Update your RSN and server nickname',
                     ].join('\n'),
                     inline: false
                 }
@@ -408,6 +410,12 @@ const commands = [
         .setName('eventattendance')
         .setDescription('Check clan event attendance')
         .addUserOption(o => o.setName('member').setDescription('Member to look up (leave blank to check yourself)').setRequired(false)),
+
+    new SlashCommandBuilder()
+        .setName('updatersn')
+        .setDescription('Update your RSN and server nickname')
+        .addStringOption(o => o.setName('newrsn').setDescription('Your new RSN').setRequired(true))
+        .addUserOption(o => o.setName('member').setDescription('Member to update (Leadership only)').setRequired(false)),
 
 ].map(c => c.toJSON());
 
@@ -1056,6 +1064,39 @@ client.on('interactionCreate', async interaction => {
             .setTimestamp();
 
         await interaction.reply({ embeds: [embed] });
+        return;
+    }
+
+    if (interaction.commandName === 'updatersn') {
+        const newRsn = interaction.options.getString('newrsn').trim();
+        const targetUser = interaction.options.getMember('member');
+        const isLeadership = interaction.member.roles.cache.has(LEADERSHIP_ROLE_ID);
+
+        // Only leadership can update someone else
+        if (targetUser && !isLeadership) {
+            await interaction.reply({ content: "Only leadership can update another member's RSN.", ephemeral: true });
+            return;
+        }
+
+        const target = targetUser || interaction.member;
+        const oldRsn = target.nickname || target.displayName || target.user.username;
+
+        // Update server nickname
+        try {
+            await target.setNickname(newRsn);
+        } catch (err) {
+            await interaction.reply({ content: `⚠️ Could not update server nickname — make sure the bot has permission to manage nicknames.`, ephemeral: true });
+            return;
+        }
+
+        // Update all database records
+        updateRSN(target.id, newRsn);
+
+        await interaction.reply({
+            content: `✅ **RSN updated!**
+**${oldRsn}** → **${newRsn}**
+Server nickname and all records have been updated.`
+        });
         return;
     }
 
