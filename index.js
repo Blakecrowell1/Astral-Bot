@@ -44,7 +44,7 @@ const MEMBER_ROLE_ID = "1479586030058471530";
 const RECRUIT_CHANNEL_ID = "1479812369889624345";
 const STAFF_ROLE_ID = "1480285731955019806";
 const LEADERSHIP_ROLE_ID = "1479585915037941872";
-const BOT_COMMANDS_CHANNEL_ID = "1508520980035801169";
+const BOT_COMMANDS_CHANNEL_ID = "1479599992346906676"; // Update this to your #bot-commands channel ID
 const WOM_LINK = "https://wiseoldman.net/groups/24109";
 
 const COIN = "<:Coins:1480262838323773625>";
@@ -172,31 +172,11 @@ async function postCommandsList(client) {
                 {
                     name: '👤 Member Commands',
                     value: [
-                        '`/profile` — View your clan profile (events, recruits, donations, days in clan)',
+                        '`/profile` — View your own clan profile',
                         '`/profile @member` — View another member\'s profile',
                         '`/coffer` — Check the current clan coffer total',
-                        '`/eventattendance` — Check your event attendance count and history',
+                        '`/eventattendance` — Check your event attendance history',
                         '`/eventattendance @member` — Check another member\'s attendance',
-                    ].join('\n'),
-                    inline: false
-                },
-                {
-                    name: '🎮 LFG Commands',
-                    value: [
-                        '`/lfgpanel` — Create the LFG panel in the LFG channel (Members only)',
-                    ].join('\n'),
-                    inline: false
-                },
-                {
-                    name: '👑 Leadership Commands',
-                    value: [
-                        '`/recordattendance` — Record event attendance from a clan event paste',
-                        '`/addattendance @member` — Manually add an attendance credit',
-                        '`/removeattendance @member` — Remove most recent attendance entry',
-                        '`/addrecruit @recruit @recruiter` — Link a new member to their recruiter',
-                        '`/removerecruit @recruit` — Remove a recruit from a recruiter\'s record',
-                        '`/add [amount] @member` — Add GP to the coffer (and credit a donor)',
-                        '`/remove [amount]` — Remove GP from the coffer',
                     ].join('\n'),
                     inline: false
                 }
@@ -790,26 +770,22 @@ client.on('interactionCreate', async interaction => {
             ? recruitRows.map(r => `• ${r.recruit_rsn}`).join('\n')
             : 'No recruits yet.';
 
-        function boxRow(label1, val1, label2, val2) {
-            const w = 16;
-            const pad = (s, n) => { s = String(s); return s.padStart(Math.floor((n + s.length) / 2)).padEnd(n); };
-            const l1 = label1.padEnd(w + 2);
-            const l2 = label2.padEnd(w + 2);
-            const v1 = pad(val1, w);
-            const v2 = pad(val2, w);
-            const bar = '\u2500'.repeat(w);
-            return [
-                `  ${l1}   ${l2}`,
-                `  \u250c${bar}\u2510   \u250c${bar}\u2510`,
-                `  \u2502${v1}\u2502   \u2502${v2}\u2502`,
-                `  \u2514${bar}\u2518   \u2514${bar}\u2518`,
-            ].join('\n');
-        }
+        const w = 12;
+        const pad = (s) => { s = String(s); const l = Math.floor((w - s.length) / 2); const r = w - s.length - l; return ' '.repeat(Math.max(0,l)) + s + ' '.repeat(Math.max(0,r)); };
+        const bar = '\u2500'.repeat(w);
+        const tl = '\u250c', tr = '\u2510', bl = '\u2514', br = '\u2518', si = '\u2502';
+        const sp = '  ';
 
         const statsBlock = [
-            boxRow('📅 Days in Clan', `${daysInClan} days`, '📋 Events Attended', `${attendanceRows.length}`),
-            '',
-            boxRow('👥 Recruits', `${recruitRows.length}`, '💰 Total Donated', totalDonated > 0 ? format(totalDonated) : '0gp'),
+            `DAYS IN CLAN    EVENTS ATTENDED`,
+            `${tl}${bar}${tr}${sp}${tl}${bar}${tr}`,
+            `${si}${pad(daysInClan + ' days')}${si}${sp}${si}${pad(attendanceRows.length)}${si}`,
+            `${bl}${bar}${br}${sp}${bl}${bar}${br}`,
+            ``,
+            `RECRUITS        TOTAL DONATED`,
+            `${tl}${bar}${tr}${sp}${tl}${bar}${tr}`,
+            `${si}${pad(recruitRows.length)}${si}${sp}${si}${pad(totalDonated > 0 ? format(totalDonated) : '0gp')}${si}`,
+            `${bl}${bar}${br}${sp}${bl}${bar}${br}`,
         ].join('\n');
 
         const embed = new EmbedBuilder()
@@ -829,9 +805,8 @@ client.on('interactionCreate', async interaction => {
     }
 
     if (interaction.commandName === 'lfgpanel') {
-        const member = interaction.member;
-        if (!member.roles.cache.has(MEMBER_ROLE_ID)) {
-            await interaction.reply({ content: "You must have the Member role to use this.", ephemeral: true });
+        if (interaction.user.id !== OWNER_ID) {
+            await interaction.reply({ content: "Only Raleigh can use this command.", ephemeral: true });
             return;
         }
         if (interaction.channel.id !== LFG_CHANNEL_ID) {
