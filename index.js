@@ -202,9 +202,6 @@ async function postCommandsList(client) {
     }
 }
 
-// Pending attendance pastes waiting for event name modal
-const pendingAttendance = new Map();
-
 async function postAttendancePanel(client) {
     try {
         const channel = await client.channels.fetch(ATTENDANCE_CHANNEL_ID);
