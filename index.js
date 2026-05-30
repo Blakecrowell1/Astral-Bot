@@ -769,15 +769,17 @@ client.on('interactionCreate', async interaction => {
             await interaction.deferReply({ ephemeral: true });
 
             try {
-                const res = await fetch(`https://api.wiseoldman.net/v2/competitions/${competitionId}/top5`);
-                const allRes = await fetch(`https://api.wiseoldman.net/v2/competitions/${competitionId}/participants`);
+                const allRes = await fetch(`https://api.wiseoldman.net/v2/competitions/${competitionId}`, {
+                    headers: { 'Content-Type': 'application/json' }
+                });
 
                 if (!allRes.ok) {
                     await interaction.editReply({ content: `⚠️ Could not find WOM competition with ID **${competitionId}**. Please check the ID and try again.` });
                     return;
                 }
 
-                const participants = await allRes.json();
+                const compData = await allRes.json();
+                const participants = compData.participations || [];
                 const qualified = participants.filter(p => {
                     const gained = p.progress?.gained ?? 0;
                     return gained >= threshold;
@@ -788,8 +790,9 @@ client.on('interactionCreate', async interaction => {
                 const belowThreshold = participants.length - qualified.length;
 
                 for (const participant of qualified) {
-                    const rsn = participant.player?.displayName || participant.player?.username;
+                    const rsn = participant.player?.displayName || participant.player?.username || participant.player?.id;
                     if (!rsn) continue;
+                    console.log("WOM participant RSN:", rsn);
 
                     const guildMember = interaction.guild.members.cache.find(m => {
                         const nick = (m.nickname || m.displayName || '').toLowerCase();
