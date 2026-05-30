@@ -790,9 +790,8 @@ client.on('interactionCreate', async interaction => {
                 const belowThreshold = participants.length - qualified.length;
 
                 for (const participant of qualified) {
-                    const rsn = participant.player?.displayName || participant.player?.username || participant.player?.id;
+                    const rsn = participant.player?.displayName || participant.player?.username;
                     if (!rsn) continue;
-                    console.log("WOM participant RSN:", rsn);
 
                     const guildMember = interaction.guild.members.cache.find(m => {
                         const nick = (m.nickname || m.displayName || '').toLowerCase();
