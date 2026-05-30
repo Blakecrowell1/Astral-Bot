@@ -45,6 +45,10 @@ const RECRUIT_CHANNEL_ID = "1479812369889624345";
 const STAFF_ROLE_ID = "1480285731955019806";
 const LEADERSHIP_ROLE_ID = "1479585915037941872";
 const BOT_COMMANDS_CHANNEL_ID = "1508520980035801169";
+const ATTENDANCE_CHANNEL_ID = "1510339026446712982";
+const EVENT_LOG_CHANNEL_ID = "1510339149851394229";
+const EVENT_STAFF_ROLE_ID = "1479806170943328289";
+const EVENT_TEAM_LEAD_ROLE_ID = "1479805747163435130";
 const WOM_LINK = "https://wiseoldman.net/groups/24109";
 
 const COIN = "<:Coins:1480262838323773625>";
@@ -195,6 +199,42 @@ async function postCommandsList(client) {
         console.log("Posted commands list.");
     } catch (err) {
         console.log("Could not post commands list:", err.message);
+    }
+}
+
+// Pending attendance pastes waiting for event name modal
+const pendingAttendance = new Map();
+
+async function postAttendancePanel(client) {
+    try {
+        const channel = await client.channels.fetch(ATTENDANCE_CHANNEL_ID);
+        if (!channel || channel.type !== ChannelType.GuildText) return;
+
+        const messages = await channel.messages.fetch({ limit: 10 });
+        const botMessages = messages.filter(m => m.author.id === client.user.id);
+        for (const msg of botMessages.values()) {
+            try { await msg.delete(); } catch {}
+        }
+
+        const embed = new EmbedBuilder()
+            .setColor(ASTRAL_BLUE)
+            .setTitle('📋 Event Attendance Submission')
+            .setDescription('Click **Submit Attendance** below to record attendance for a clan event.
+
+You will be prompted to paste the RuneLite attendance data and name the event.')
+            .setFooter({ text: 'Astral RS Clan • Leadership Only' });
+
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId('submit_attendance')
+                .setLabel('📋 Submit Attendance')
+                .setStyle(ButtonStyle.Primary)
+        );
+
+        await channel.send({ embeds: [embed], components: [row] });
+        console.log("Posted attendance panel.");
+    } catch (err) {
+        console.log("Could not post attendance panel:", err.message);
     }
 }
 
@@ -380,6 +420,7 @@ client.once('ready', async () => {
     await initDB();
     await ensureCofferMessage(client);
     await postCommandsList(client);
+    await postAttendancePanel(client);
     const guild = await client.guilds.fetch(GUILD_ID);
     await guild.members.fetch();
     console.log("Member cache loaded.");
@@ -411,6 +452,44 @@ client.on('guildMemberRemove', async (member) => {
 client.on('interactionCreate', async interaction => {
 
     if (interaction.isButton()) {
+
+        if (interaction.customId === 'submit_attendance') {
+            const member = interaction.member;
+            const hasRole = member.roles.cache.has(LEADERSHIP_ROLE_ID) ||
+                            member.roles.cache.has(EVENT_STAFF_ROLE_ID) ||
+                            member.roles.cache.has(EVENT_TEAM_LEAD_ROLE_ID);
+
+            if (!hasRole) {
+                await interaction.reply({ content: "You don't have permission to submit attendance.", ephemeral: true });
+                return;
+            }
+
+            const modal = new ModalBuilder()
+                .setCustomId('attendance_submit_modal')
+                .setTitle('Submit Event Attendance');
+
+            const pasteInput = new TextInputBuilder()
+                .setCustomId('attendance_paste')
+                .setLabel('Paste RuneLite attendance data')
+                .setStyle(TextInputStyle.Paragraph)
+                .setPlaceholder('Paste the full attendance block from the RuneLite plugin here')
+                .setRequired(true);
+
+            const eventInput = new TextInputBuilder()
+                .setCustomId('event_name')
+                .setLabel('What event was this?')
+                .setStyle(TextInputStyle.Short)
+                .setPlaceholder('e.g. Raid Night, SotW Week 3, BotW')
+                .setRequired(true);
+
+            modal.addComponents(
+                new ActionRowBuilder().addComponents(pasteInput),
+                new ActionRowBuilder().addComponents(eventInput)
+            );
+
+            await interaction.showModal(modal);
+            return;
+        }
 
         if (interaction.customId === 'create_lfg') {
             const member = interaction.member;
@@ -563,6 +642,56 @@ client.on('interactionCreate', async interaction => {
             draft.notes = interaction.fields.getTextInputValue('notes') || '';
             lfgDrafts.set(interaction.user.id, draft);
             await interaction.reply({ content: "Notes saved! Go back to your LFG panel and press **Submit LFG** when ready.", ephemeral: true });
+            return;
+        }
+
+        if (interaction.customId === 'attendance_submit_modal') {
+            const raw = interaction.fields.getTextInputValue('attendance_paste');
+            const eventName = interaction.fields.getTextInputValue('event_name');
+            const eventDate = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+            const normalized = raw.replace(/`/g, '');
+            const recorded = [];
+            const notFound = [];
+
+            const matches = [...normalized.matchAll(/([A-Za-z0-9 _'\-]+)\s*\|\s*\d{2}:\d{2}\s*\|/g)];
+            for (const match of matches) {
+                const rsn = match[1].trim().replace(/^Late\s*/i, '').replace(/^-\s*/i, '').trim();
+                if (!rsn || rsn.toLowerCase() === 'name') continue;
+                const guildMember = interaction.guild.members.cache.find(m => {
+                    const nick = (m.nickname || m.displayName || '').toLowerCase();
+                    return nick === rsn.toLowerCase();
+                });
+                if (guildMember) {
+                    recordAttendance(guildMember.id, rsn, eventDate, eventName);
+                    recorded.push(rsn);
+                } else {
+                    notFound.push(rsn);
+                }
+            }
+
+            await interaction.reply({ content: `✅ Attendance recorded successfully!`, ephemeral: true });
+
+            // Post results embed to event log channel
+            try {
+                const logChannel = await interaction.guild.channels.fetch(EVENT_LOG_CHANNEL_ID);
+                if (logChannel && logChannel.type === ChannelType.GuildText) {
+                    const resultEmbed = new EmbedBuilder()
+                        .setColor(ASTRAL_BLUE)
+                        .setTitle(`📋 Event Attendance — ${eventName}`)
+                        .addFields(
+                            { name: '📅 Date', value: eventDate, inline: true },
+                            { name: '👥 Members Credited', value: `${recorded.length}`, inline: true },
+                            { name: '✅ Credited Members', value: recorded.length > 0 ? recorded.map(r => `• ${r}`).join('\n') : 'None', inline: false },
+                            notFound.length > 0 ? { name: '⚠️ Not Found (Nickname Mismatch?)', value: notFound.map(r => `• ${r}`).join('\n'), inline: false } : { name: '\u200b', value: '\u200b', inline: false }
+                        )
+                        .setFooter({ text: `Submitted by ${interaction.member.nickname || interaction.user.username}` })
+                        .setTimestamp();
+
+                    await logChannel.send({ embeds: [resultEmbed] });
+                }
+            } catch (err) {
+                console.log("Could not post to event log channel:", err.message);
+            }
             return;
         }
 
