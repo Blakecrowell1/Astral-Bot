@@ -1,7 +1,14 @@
 const initSqlJs = require('sql.js');
 const fs = require('fs');
+const path = require('path');
 
-const DB_FILE = 'attendance.db';
+const DATA_DIR = '/app/data';
+const DB_FILE = path.join(DATA_DIR, 'attendance.db');
+
+// Ensure data directory exists
+if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+}
 
 let db;
 
@@ -42,6 +49,17 @@ async function initDB() {
             donated_at TEXT DEFAULT (datetime('now'))
         )
     `);
+
+    db.run(`
+        CREATE TABLE IF NOT EXISTS coffer (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            total INTEGER NOT NULL DEFAULT 0,
+            message_id TEXT
+        )
+    `);
+
+    // Ensure coffer row exists
+    db.run(`INSERT OR IGNORE INTO coffer (id, total) VALUES (1, 0)`);
 
     // Add event_name column if it doesn't exist (for existing databases)
     try {
@@ -138,6 +156,28 @@ function getTotalDonations(discordId) {
     return result[0].values[0][0];
 }
 
+function getCofferTotal() {
+    const result = db.exec(`SELECT total FROM coffer WHERE id = 1`);
+    if (!result.length) return 0;
+    return result[0].values[0][0];
+}
+
+function setCofferTotal(total) {
+    db.run(`UPDATE coffer SET total = ? WHERE id = 1`, [total]);
+    saveDB();
+}
+
+function getCofferMessageId() {
+    const result = db.exec(`SELECT message_id FROM coffer WHERE id = 1`);
+    if (!result.length) return null;
+    return result[0].values[0][0];
+}
+
+function setCofferMessageId(messageId) {
+    db.run(`UPDATE coffer SET message_id = ? WHERE id = 1`, [messageId]);
+    saveDB();
+}
+
 module.exports = {
     initDB,
     recordAttendance,
@@ -149,5 +189,9 @@ module.exports = {
     removeRecruit,
     getRecruiter,
     recordDonation,
-    getTotalDonations
+    getTotalDonations,
+    getCofferTotal,
+    setCofferTotal,
+    getCofferMessageId,
+    setCofferMessageId
 };

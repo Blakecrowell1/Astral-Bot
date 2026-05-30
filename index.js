@@ -26,7 +26,11 @@ const {
     removeRecruit,
     getRecruiter,
     recordDonation,
-    getTotalDonations
+    getTotalDonations,
+    getCofferTotal,
+    setCofferTotal,
+    getCofferMessageId,
+    setCofferMessageId
 } = require('./database');
 
 const TOKEN = process.env.TOKEN;
@@ -35,18 +39,19 @@ const CLIENT_ID = "1480264097780994270";
 const GUILD_ID = "1479549670354190393";
 const OWNER_ID = "1289553957982830713";
 const COFFER_CHANNEL_ID = "1480281233337487571";
-
 const LFG_CHANNEL_ID = "1479599992346906675";
 const MEMBER_ROLE_ID = "1479586030058471530";
-
 const RECRUIT_CHANNEL_ID = "1479812369889624345";
 const STAFF_ROLE_ID = "1480285731955019806";
 const LEADERSHIP_ROLE_ID = "1479585915037941872";
+const BOT_COMMANDS_CHANNEL_ID = "1508520980035801169";
 const WOM_LINK = "https://wiseoldman.net/groups/24109";
 
 const COIN = "<:Coins:1480262838323773625>";
-const DATA_FILE = "coffer.json";
 const ASTRAL_BLUE = 0x93BFD6;
+
+// Pending attendance pastes waiting for event name modal
+const pendingAttendance = new Map();
 
 const PVM_ACTIVITIES = [
     "ToA", "CoX", "ToB", "Hueycoatl", "Wilderness Bosses", "Yama",
@@ -89,22 +94,6 @@ const TEAM_LIMITS = {
 const lfgDrafts = new Map();
 const activeLfgPosts = new Map();
 
-let data = { total: 0, messageId: null };
-
-if (fs.existsSync(DATA_FILE)) {
-    try {
-        const saved = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
-        data.total = saved.total || 0;
-        data.messageId = saved.messageId || null;
-    } catch {
-        data = { total: 0, messageId: null };
-    }
-}
-
-function saveData() {
-    fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
-}
-
 function format(num) {
     if (num >= 1000000000) {
         const v = num / 1000000000;
@@ -135,7 +124,7 @@ function buildCofferMessage() {
         embeds: [
             new EmbedBuilder()
                 .setColor(0xFFD700)
-                .setDescription(`${COIN} ${format(data.total)} ${COIN}`)
+                .setDescription(`${COIN} ${format(getCofferTotal())} ${COIN}`)
         ]
     };
 }
@@ -143,24 +132,22 @@ function buildCofferMessage() {
 async function ensureCofferMessage(client) {
     try {
         const channel = await client.channels.fetch(COFFER_CHANNEL_ID);
-        if (!channel) { console.log("Coffer channel not found."); return; }
-        if (channel.type !== ChannelType.GuildText) { console.log("Coffer channel is not a text channel."); return; }
+        if (!channel || channel.type !== ChannelType.GuildText) return;
 
         let message = null;
+        const savedId = getCofferMessageId();
 
-        if (data.messageId) {
+        if (savedId) {
             try {
-                message = await channel.messages.fetch(data.messageId);
-            } catch (err) {
-                console.log("Saved coffer message not found, sending a new one.");
+                message = await channel.messages.fetch(savedId);
+            } catch {
                 message = null;
             }
         }
 
         if (!message) {
             message = await channel.send(buildCofferMessage());
-            data.messageId = message.id;
-            saveData();
+            setCofferMessageId(message.id);
             console.log("Created new coffer message:", message.id);
             return;
         }
@@ -169,6 +156,65 @@ async function ensureCofferMessage(client) {
         console.log("Updated existing coffer message:", message.id);
     } catch (err) {
         console.log("Could not create or update coffer message:", err.message);
+    }
+}
+
+async function postCommandsList(client) {
+    try {
+        const channel = await client.channels.fetch(BOT_COMMANDS_CHANNEL_ID);
+        if (!channel || channel.type !== ChannelType.GuildText) return;
+
+        const embed = new EmbedBuilder()
+            .setColor(ASTRAL_BLUE)
+            .setTitle('⚔️ Astral RS — Bot Commands')
+            .setDescription('All available bot commands for Astral RS members.')
+            .addFields(
+                {
+                    name: '👤 Member Commands',
+                    value: [
+                        '`/profile` — View your clan profile (events, recruits, donations, days in clan)',
+                        '`/profile @member` — View another member\'s profile',
+                        '`/coffer` — Check the current clan coffer total',
+                        '`/eventattendance` — Check your event attendance count and history',
+                        '`/eventattendance @member` — Check another member\'s attendance',
+                    ].join('\n'),
+                    inline: false
+                },
+                {
+                    name: '🎮 LFG Commands',
+                    value: [
+                        '`/lfgpanel` — Create the LFG panel in the LFG channel (Members only)',
+                    ].join('\n'),
+                    inline: false
+                },
+                {
+                    name: '👑 Leadership Commands',
+                    value: [
+                        '`/recordattendance` — Record event attendance from a clan event paste',
+                        '`/addattendance @member` — Manually add an attendance credit',
+                        '`/removeattendance @member` — Remove most recent attendance entry',
+                        '`/addrecruit @recruit @recruiter` — Link a new member to their recruiter',
+                        '`/removerecruit @recruit` — Remove a recruit from a recruiter\'s record',
+                        '`/add [amount] @member` — Add GP to the coffer (and credit a donor)',
+                        '`/remove [amount]` — Remove GP from the coffer',
+                    ].join('\n'),
+                    inline: false
+                }
+            )
+            .setFooter({ text: 'Astral RS Clan • Commands are restricted to #bot-commands' })
+            .setTimestamp();
+
+        // Clear old command list messages and repost
+        const messages = await channel.messages.fetch({ limit: 10 });
+        const botMessages = messages.filter(m => m.author.id === client.user.id);
+        for (const msg of botMessages.values()) {
+            try { await msg.delete(); } catch {}
+        }
+
+        await channel.send({ embeds: [embed] });
+        console.log("Posted commands list.");
+    } catch (err) {
+        console.log("Could not post commands list:", err.message);
     }
 }
 
@@ -183,21 +229,11 @@ function getDraft(userId) {
 
 function buildLfgPanelContent(userId) {
     const draft = getDraft(userId);
-    return `🔵 **Astral LFG Setup**
-
-**Activity Type:** ${draft.activityType || "Not selected"}
-**Activity:** ${draft.activityName || "Not selected"}
-**Team Size:** ${draft.teamSize || "Not selected"}
-**Start Time:** ${draft.startTime || "Not selected"}
-**Notes:** ${draft.notes || "None"}
-
-Choose your options below, then press **Submit LFG**.`;
+    return `🔵 **Astral LFG Setup**\n\n**Activity Type:** ${draft.activityType || "Not selected"}\n**Activity:** ${draft.activityName || "Not selected"}\n**Team Size:** ${draft.teamSize || "Not selected"}\n**Start Time:** ${draft.startTime || "Not selected"}\n**Notes:** ${draft.notes || "None"}\n\nChoose your options below, then press **Submit LFG**.`;
 }
 
 function buildActivityOptions(activityType) {
-    const activities =
-        activityType === "PvM" ? PVM_ACTIVITIES :
-        activityType === "Minigame" ? MINIGAME_ACTIVITIES : [];
+    const activities = activityType === "PvM" ? PVM_ACTIVITIES : activityType === "Minigame" ? MINIGAME_ACTIVITIES : [];
     return activities.map(name => ({ label: name, value: name }));
 }
 
@@ -208,10 +244,7 @@ function buildLfgPanelComponents(userId) {
         new StringSelectMenuBuilder()
             .setCustomId('lfg_type')
             .setPlaceholder('Choose Activity Type')
-            .addOptions(
-                { label: 'PvM', value: 'PvM' },
-                { label: 'Minigame', value: 'Minigame' }
-            )
+            .addOptions({ label: 'PvM', value: 'PvM' }, { label: 'Minigame', value: 'Minigame' })
     );
 
     const activityMenu = new StringSelectMenuBuilder()
@@ -224,19 +257,14 @@ function buildLfgPanelComponents(userId) {
         activityMenu.addOptions(buildActivityOptions(draft.activityType));
     }
 
-    const activityRow = new ActionRowBuilder().addComponents(activityMenu);
-
     const teamRow = new ActionRowBuilder().addComponents(
         new StringSelectMenuBuilder()
             .setCustomId('lfg_team')
             .setPlaceholder('Choose Team Size')
             .addOptions(
-                { label: 'Duo', value: 'Duo' },
-                { label: 'Trio', value: 'Trio' },
-                { label: '4 Man', value: '4 Man' },
-                { label: '5 Man', value: '5 Man' },
-                { label: 'Mass', value: 'Mass' },
-                { label: 'Learners', value: 'Learners' }
+                { label: 'Duo', value: 'Duo' }, { label: 'Trio', value: 'Trio' },
+                { label: '4 Man', value: '4 Man' }, { label: '5 Man', value: '5 Man' },
+                { label: 'Mass', value: 'Mass' }, { label: 'Learners', value: 'Learners' }
             )
     );
 
@@ -245,174 +273,139 @@ function buildLfgPanelComponents(userId) {
             .setCustomId('lfg_time')
             .setPlaceholder('Choose Start Time')
             .addOptions(
-                { label: 'Now', value: 'Now' },
-                { label: '15 Minutes', value: '15 Minutes' },
-                { label: '30 Minutes', value: '30 Minutes' },
-                { label: '1 Hour', value: '1 Hour' }
+                { label: 'Now', value: 'Now' }, { label: '15 Minutes', value: '15 Minutes' },
+                { label: '30 Minutes', value: '30 Minutes' }, { label: '1 Hour', value: '1 Hour' }
             )
     );
 
     const buttonRow = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('lfg_notes').setLabel('Add Notes').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('lfg_submit').setLabel('Submit LFG').setStyle(ButtonStyle.Success),
-        new ButtonBuilder().setCustomId('lfg_cancel').setLabel('Cancel').setStyle(ButtonStyle.Danger)
+        new ButtonBuilder().setCustomId('lfg_notes').setLabel('📝 Add Notes').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('lfg_submit').setLabel('✅ Submit LFG').setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId('lfg_cancel').setLabel('❌ Cancel').setStyle(ButtonStyle.Danger)
     );
 
-    return [typeRow, activityRow, teamRow, timeRow, buttonRow];
+    return [typeRow, new ActionRowBuilder().addComponents(activityMenu), teamRow, timeRow, buttonRow];
 }
 
 function buildStartTimeText(startTime) {
     const now = Math.floor(Date.now() / 1000);
     if (startTime === "Now") return `<t:${now}:t> • <t:${now}:R>`;
-    if (startTime === "15 Minutes") { const ts = now + (15 * 60); return `<t:${ts}:t> • <t:${ts}:R>`; }
-    if (startTime === "30 Minutes") { const ts = now + (30 * 60); return `<t:${ts}:t> • <t:${ts}:R>`; }
-    if (startTime === "1 Hour") { const ts = now + (60 * 60); return `<t:${ts}:t> • <t:${ts}:R>`; }
+    if (startTime === "15 Minutes") { const ts = now + 900; return `<t:${ts}:t> • <t:${ts}:R>`; }
+    if (startTime === "30 Minutes") { const ts = now + 1800; return `<t:${ts}:t> • <t:${ts}:R>`; }
+    if (startTime === "1 Hour") { const ts = now + 3600; return `<t:${ts}:t> • <t:${ts}:R>`; }
     return startTime;
 }
 
 function buildEventButtons(isFull, isClosed) {
     return [
         new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('lfg_join').setLabel('Join').setStyle(ButtonStyle.Success).setDisabled(isFull || isClosed),
-            new ButtonBuilder().setCustomId('lfg_leave').setLabel('Leave').setStyle(ButtonStyle.Danger).setDisabled(isClosed),
-            new ButtonBuilder().setCustomId('lfg_close').setLabel('Close').setStyle(ButtonStyle.Secondary).setDisabled(isClosed)
+            new ButtonBuilder().setCustomId('lfg_join').setLabel('✅ Join').setStyle(ButtonStyle.Success).setDisabled(isFull || isClosed),
+            new ButtonBuilder().setCustomId('lfg_leave').setLabel('❌ Leave').setStyle(ButtonStyle.Danger).setDisabled(isClosed),
+            new ButtonBuilder().setCustomId('lfg_close').setLabel('🔒 Close').setStyle(ButtonStyle.Secondary).setDisabled(isClosed)
         )
     ];
 }
 
 function buildInterestedList(post) {
-    return post.interested.map(id => {
-        if (id === post.hostId) return `• <@${id}> (Host)`;
-        return `• <@${id}>`;
-    }).join('\n');
+    if (post.interested.length === 0) return 'No one yet';
+    return post.interested.map(id => id === post.hostId ? `• <@${id}> 👑` : `• <@${id}>`).join('\n');
 }
 
 function buildLfgEmbed(post) {
     const isFull = post.interested.length >= post.limit;
-    let footerText = "Open Group";
-    if (post.closed) footerText = "Group Closed";
-    else if (isFull) footerText = "Group Full";
+    let statusEmoji = '🟢';
+    let footerText = 'Open Group';
+    if (post.closed) { statusEmoji = '🔴'; footerText = 'Group Closed'; }
+    else if (isFull) { statusEmoji = '🟡'; footerText = 'Group Full'; }
 
     return new EmbedBuilder()
         .setColor(ASTRAL_BLUE)
-        .setTitle("Astral Group Finder")
+        .setTitle(`${statusEmoji} Astral Group Finder`)
         .setDescription(`<@&${post.roleId}>`)
         .addFields(
-            { name: "Activity", value: post.activityName, inline: true },
-            { name: "Type", value: post.activityType, inline: true },
-            { name: "Team Size", value: post.teamSize, inline: true },
-            { name: "Host", value: `<@${post.hostId}>`, inline: true },
-            { name: "Start Time", value: post.startTimeText, inline: true },
-            { name: "Notes", value: post.notes || "None", inline: false },
-            { name: "Interested", value: buildInterestedList(post), inline: false }
+            { name: '⚔️ Activity', value: post.activityName, inline: true },
+            { name: '🗂️ Type', value: post.activityType, inline: true },
+            { name: '👥 Team Size', value: post.teamSize, inline: true },
+            { name: '👑 Host', value: `<@${post.hostId}>`, inline: true },
+            { name: '⏰ Start Time', value: post.startTimeText, inline: true },
+            { name: '📝 Notes', value: post.notes || 'None', inline: true },
+            { name: `🎯 Interested (${post.interested.length}/${post.limit === 999 ? '∞' : post.limit})`, value: buildInterestedList(post), inline: false }
         )
-        .setFooter({ text: footerText });
+        .setFooter({ text: footerText })
+        .setTimestamp();
 }
 
 const commands = [
-    new SlashCommandBuilder()
-        .setName('coffer')
-        .setDescription('Shows the clan coffer total'),
+    new SlashCommandBuilder().setName('coffer').setDescription('Shows the clan coffer total'),
 
     new SlashCommandBuilder()
         .setName('add')
         .setDescription('Add GP to the clan coffer')
-        .addStringOption(option =>
-            option.setName('amount').setDescription('Example: 25m, 500k, 2b').setRequired(true)
-        )
-        .addUserOption(option =>
-            option.setName('member').setDescription('Member who donated (optional)').setRequired(false)
-        ),
+        .addStringOption(o => o.setName('amount').setDescription('Example: 25m, 500k, 2b').setRequired(true))
+        .addUserOption(o => o.setName('member').setDescription('Member who donated (optional)').setRequired(false)),
 
     new SlashCommandBuilder()
         .setName('remove')
         .setDescription('Remove GP from the clan coffer')
-        .addStringOption(option =>
-            option.setName('amount').setDescription('Example: 25m, 500k, 2b').setRequired(true)
-        ),
+        .addStringOption(o => o.setName('amount').setDescription('Example: 25m, 500k, 2b').setRequired(true)),
 
-    new SlashCommandBuilder()
-        .setName('timezone')
-        .setDescription('Set your timezone'),
-
-    new SlashCommandBuilder()
-        .setName('lfgpanel')
-        .setDescription('Create the LFG control panel'),
+    new SlashCommandBuilder().setName('timezone').setDescription('Set your timezone'),
+    new SlashCommandBuilder().setName('lfgpanel').setDescription('Create the LFG control panel'),
 
     new SlashCommandBuilder()
         .setName('recordattendance')
         .setDescription('Record attendance from a clan event (Leadership only)')
-        .addStringOption(option =>
-            option.setName('event').setDescription('Name of the event (e.g. Raid Night, SotW Week 3)').setRequired(true)
-        )
-        .addStringOption(option =>
-            option.setName('data').setDescription('Paste the full attendance block here').setRequired(true)
-        ),
+        .addStringOption(o => o.setName('data').setDescription('Paste the full attendance block here').setRequired(true)),
 
     new SlashCommandBuilder()
         .setName('addattendance')
         .setDescription('Manually add an attendance credit for a member (Leadership only)')
-        .addUserOption(option =>
-            option.setName('member').setDescription('The member to credit').setRequired(true)
-        )
-        .addStringOption(option =>
-            option.setName('event').setDescription('Name of the event (e.g. Raid Night, SotW Week 3)').setRequired(true)
-        ),
+        .addUserOption(o => o.setName('member').setDescription('The member to credit').setRequired(true))
+        .addStringOption(o => o.setName('event').setDescription('Name of the event').setRequired(true)),
 
     new SlashCommandBuilder()
         .setName('removeattendance')
         .setDescription('Remove the most recent attendance entry for a member (Leadership only)')
-        .addUserOption(option =>
-            option.setName('member').setDescription('The member to remove attendance from').setRequired(true)
-        ),
+        .addUserOption(o => o.setName('member').setDescription('The member to remove attendance from').setRequired(true)),
 
     new SlashCommandBuilder()
         .setName('addrecruit')
         .setDescription('Credit a member for recruiting a new clan member (Leadership only)')
-        .addUserOption(option =>
-            option.setName('recruit').setDescription('The new member who joined').setRequired(true)
-        )
-        .addUserOption(option =>
-            option.setName('recruiter').setDescription('The member who recruited them').setRequired(true)
-        ),
+        .addUserOption(o => o.setName('recruit').setDescription('The new member who joined').setRequired(true))
+        .addUserOption(o => o.setName('recruiter').setDescription('The member who recruited them').setRequired(true)),
 
     new SlashCommandBuilder()
         .setName('removerecruit')
         .setDescription("Remove a recruit from a recruiter's record (Leadership only)")
-        .addUserOption(option =>
-            option.setName('recruit').setDescription('The recruit to remove').setRequired(true)
-        ),
+        .addUserOption(o => o.setName('recruit').setDescription('The recruit to remove').setRequired(true)),
 
     new SlashCommandBuilder()
         .setName('profile')
         .setDescription("View a clan member's profile")
-        .addUserOption(option =>
-            option.setName('member').setDescription('Member to look up (leave blank to view your own)').setRequired(false)
-        ),
+        .addUserOption(o => o.setName('member').setDescription('Member to look up (leave blank to view your own)').setRequired(false)),
+
+    new SlashCommandBuilder()
+        .setName('eventattendance')
+        .setDescription('Check clan event attendance')
+        .addUserOption(o => o.setName('member').setDescription('Member to look up (leave blank to check yourself)').setRequired(false)),
 
 ].map(c => c.toJSON());
 
 const rest = new REST({ version: '10' }).setToken(TOKEN);
 
-const client = new Client({
-    intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMembers
-    ]
-});
+const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers] });
 
 client.once('ready', async () => {
     console.log("Astral Bot is online");
     await initDB();
     await ensureCofferMessage(client);
+    await postCommandsList(client);
     const guild = await client.guilds.fetch(GUILD_ID);
     await guild.members.fetch();
     console.log("Member cache loaded.");
 });
 
-client.on('guildMemberAdd', async () => {
-    // Join message removed
-});
+client.on('guildMemberAdd', async () => {});
 
 client.on('guildMemberRemove', async (member) => {
     try {
@@ -420,11 +413,9 @@ client.on('guildMemberRemove', async (member) => {
         removeRecruit(member.id);
 
         const channel = await member.guild.channels.fetch(RECRUIT_CHANNEL_ID);
-        if (!channel) return;
-        if (channel.type !== ChannelType.GuildText) return;
+        if (!channel || channel.type !== ChannelType.GuildText) return;
 
         const nickname = member.nickname || member.displayName || member.user.username;
-
         const embed = new EmbedBuilder()
             .setColor(0xED4245)
             .setTitle("Member Left")
@@ -461,12 +452,12 @@ client.on('interactionCreate', async interaction => {
         }
 
         if (interaction.customId === 'lfg_notes') {
-            const modal = new ModalBuilder().setCustomId('lfg_notes_modal').setTitle('Add LFG Notes');
+            const modal = new ModalBuilder().setCustomId('lfg_notes_modal').setTitle('Add Notes to Your LFG');
             const notesInput = new TextInputBuilder()
                 .setCustomId('notes')
-                .setLabel('Notes')
+                .setLabel('Notes (optional)')
                 .setStyle(TextInputStyle.Paragraph)
-                .setPlaceholder('Optional notes')
+                .setPlaceholder('e.g. Learner friendly, bring supplies, Discord required...')
                 .setRequired(false);
             modal.addComponents(new ActionRowBuilder().addComponents(notesInput));
             await interaction.showModal(modal);
@@ -486,12 +477,8 @@ client.on('interactionCreate', async interaction => {
                 return;
             }
             const activityInfo = ACTIVITY_MAP[draft.activityName];
-            if (!activityInfo) {
-                await interaction.reply({ content: "That activity is not recognized.", ephemeral: true });
-                return;
-            }
-            if (activityInfo.type !== draft.activityType) {
-                await interaction.reply({ content: "Your Activity Type and Activity do not match. Please fix them and try again.", ephemeral: true });
+            if (!activityInfo || activityInfo.type !== draft.activityType) {
+                await interaction.reply({ content: "Activity type and activity do not match. Please fix them and try again.", ephemeral: true });
                 return;
             }
             const newPost = {
@@ -514,7 +501,22 @@ client.on('interactionCreate', async interaction => {
             });
             activeLfgPosts.set(sentMessage.id, newPost);
             lfgDrafts.delete(interaction.user.id);
-            await interaction.update({ content: "LFG posted successfully.", components: [] });
+            await interaction.update({ content: "✅ LFG posted successfully!", components: [] });
+
+            // Auto-delete after 3 hours if not closed
+            setTimeout(async () => {
+                const post = activeLfgPosts.get(sentMessage.id);
+                if (post && !post.closed) {
+                    try {
+                        await sentMessage.delete();
+                        activeLfgPosts.delete(sentMessage.id);
+                        console.log("Auto-deleted expired LFG post:", sentMessage.id);
+                    } catch (err) {
+                        console.log("Could not auto-delete LFG post:", err.message);
+                    }
+                }
+            }, 3 * 60 * 60 * 1000);
+
             return;
         }
 
@@ -526,11 +528,7 @@ client.on('interactionCreate', async interaction => {
             if (post.interested.length >= post.limit) { await interaction.reply({ content: "This group is already full.", ephemeral: true }); return; }
             post.interested.push(interaction.user.id);
             const isFull = post.interested.length >= post.limit;
-            await interaction.update({
-                content: `<@&${post.roleId}>`,
-                embeds: [buildLfgEmbed(post)],
-                components: buildEventButtons(isFull, false)
-            });
+            await interaction.update({ content: `<@&${post.roleId}>`, embeds: [buildLfgEmbed(post)], components: buildEventButtons(isFull, false) });
             return;
         }
 
@@ -542,29 +540,20 @@ client.on('interactionCreate', async interaction => {
             if (!post.interested.includes(interaction.user.id)) { await interaction.reply({ content: "You are not currently in this group.", ephemeral: true }); return; }
             post.interested = post.interested.filter(id => id !== interaction.user.id);
             const isFull = post.interested.length >= post.limit;
-            await interaction.update({
-                content: `<@&${post.roleId}>`,
-                embeds: [buildLfgEmbed(post)],
-                components: buildEventButtons(isFull, false)
-            });
+            await interaction.update({ content: `<@&${post.roleId}>`, embeds: [buildLfgEmbed(post)], components: buildEventButtons(isFull, false) });
             return;
         }
 
         if (interaction.customId === 'lfg_close') {
             const post = activeLfgPosts.get(interaction.message.id);
             if (!post) { await interaction.reply({ content: "This LFG post is no longer active.", ephemeral: true }); return; }
-            const member = interaction.member;
-            const isLeader = member.roles.cache.has(LEADERSHIP_ROLE_ID);
+            const isLeader = interaction.member.roles.cache.has(LEADERSHIP_ROLE_ID);
             if (interaction.user.id !== post.hostId && !isLeader) {
                 await interaction.reply({ content: "Only the host or leadership can close this group.", ephemeral: true });
                 return;
             }
             post.closed = true;
-            await interaction.update({
-                content: `<@&${post.roleId}>`,
-                embeds: [buildLfgEmbed(post)],
-                components: buildEventButtons(false, true)
-            });
+            await interaction.update({ content: `<@&${post.roleId}>`, embeds: [buildLfgEmbed(post)], components: buildEventButtons(false, true) });
             setTimeout(async () => {
                 try {
                     await interaction.message.delete();
@@ -584,10 +573,7 @@ client.on('interactionCreate', async interaction => {
         if (interaction.customId === 'lfg_team') draft.teamSize = interaction.values[0];
         if (interaction.customId === 'lfg_time') draft.startTime = interaction.values[0];
         lfgDrafts.set(interaction.user.id, draft);
-        await interaction.update({
-            content: buildLfgPanelContent(interaction.user.id),
-            components: buildLfgPanelComponents(interaction.user.id)
-        });
+        await interaction.update({ content: buildLfgPanelContent(interaction.user.id), components: buildLfgPanelComponents(interaction.user.id) });
         return;
     }
 
@@ -596,10 +582,46 @@ client.on('interactionCreate', async interaction => {
             const draft = getDraft(interaction.user.id);
             draft.notes = interaction.fields.getTextInputValue('notes') || '';
             lfgDrafts.set(interaction.user.id, draft);
-            await interaction.reply({
-                content: "Notes saved. Go back to your LFG panel and press Submit LFG when ready.",
-                ephemeral: true
-            });
+            await interaction.reply({ content: "Notes saved! Go back to your LFG panel and press **Submit LFG** when ready.", ephemeral: true });
+            return;
+        }
+
+        if (interaction.customId === 'attendance_event_modal') {
+            const pending = pendingAttendance.get(interaction.user.id);
+            if (!pending) {
+                await interaction.reply({ content: "Session expired. Please run `/recordattendance` again.", ephemeral: true });
+                return;
+            }
+            pendingAttendance.delete(interaction.user.id);
+
+            const eventName = interaction.fields.getTextInputValue('event_name');
+            const { raw } = pending;
+            const eventDate = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+            const normalized = raw.replace(/`/g, '');
+            const recorded = [];
+            const notFound = [];
+
+            const matches = [...normalized.matchAll(/([A-Za-z0-9 _'\-]+)\s*\|\s*\d{2}:\d{2}\s*\|/g)];
+            for (const match of matches) {
+                const rsn = match[1].trim().replace(/^Late\s*/i, '').replace(/^-\s*/i, '').trim();
+                if (!rsn || rsn.toLowerCase() === 'name') continue;
+                const guildMember = interaction.guild.members.cache.find(m => {
+                    const nick = (m.nickname || m.displayName || '').toLowerCase();
+                    return nick === rsn.toLowerCase();
+                });
+                if (guildMember) {
+                    recordAttendance(guildMember.id, rsn, eventDate, eventName);
+                    recorded.push(rsn);
+                } else {
+                    notFound.push(rsn);
+                }
+            }
+
+            let response = `✅ **Attendance recorded for ${eventDate} — ${eventName}**\n`;
+            response += `👥 **${recorded.length} member(s) credited:** ${recorded.join(', ') || 'None'}\n`;
+            if (notFound.length > 0) response += `⚠️ **Could not find (nickname mismatch?):** ${notFound.join(', ')}`;
+
+            await interaction.reply({ content: response, ephemeral: true });
             return;
         }
     }
@@ -607,7 +629,7 @@ client.on('interactionCreate', async interaction => {
     if (!interaction.isChatInputCommand()) return;
 
     if (interaction.commandName === "coffer") {
-        await interaction.reply(`${COIN}┃Clan Coffers: ${format(data.total)}`);
+        await interaction.reply(`${COIN}┃Clan Coffers: ${format(getCofferTotal())}`);
         return;
     }
 
@@ -616,34 +638,26 @@ client.on('interactionCreate', async interaction => {
             await interaction.reply({ content: "Only Raleigh can change the coffer.", ephemeral: true });
             return;
         }
-
         const amount = parseGP(interaction.options.getString("amount"));
-
         if (!amount || isNaN(amount) || amount <= 0) {
             await interaction.reply({ content: "Enter a valid amount like 25m, 500k, or 2b.", ephemeral: true });
             return;
         }
-
         if (interaction.commandName === "add") {
             const donatingMember = interaction.options.getMember('member');
             if (donatingMember) {
                 const rsn = donatingMember.nickname || donatingMember.displayName || donatingMember.user.username;
                 recordDonation(donatingMember.id, rsn, amount);
             }
-            data.total += amount;
-            saveData();
-            const donorText = donatingMember
-                ? ` from **${donatingMember.nickname || donatingMember.displayName}**`
-                : '';
-            await interaction.reply(`Added ${format(amount)}${donorText}. ${COIN} New Total: ${format(data.total)}`);
+            setCofferTotal(getCofferTotal() + amount);
+            const donorText = donatingMember ? ` from **${donatingMember.nickname || donatingMember.displayName}**` : '';
+            await interaction.reply(`Added ${format(amount)}${donorText}. ${COIN} New Total: ${format(getCofferTotal())}`);
             await ensureCofferMessage(client);
             return;
         }
-
         if (interaction.commandName === "remove") {
-            data.total = Math.max(0, data.total - amount);
-            saveData();
-            await interaction.reply(`Removed ${format(amount)}. ${COIN} New Total: ${format(data.total)}`);
+            setCofferTotal(Math.max(0, getCofferTotal() - amount));
+            await interaction.reply(`Removed ${format(amount)}. ${COIN} New Total: ${format(getCofferTotal())}`);
             await ensureCofferMessage(client);
             return;
         }
@@ -660,31 +674,18 @@ client.on('interactionCreate', async interaction => {
             await interaction.reply({ content: "Only leadership can record attendance.", ephemeral: true });
             return;
         }
-        const eventName = interaction.options.getString('event');
         const raw = interaction.options.getString('data');
-        const eventDate = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-        const normalized = raw.replace(/`/g, '');
-        const recorded = [];
-        const notFound = [];
-        const matches = [...normalized.matchAll(/([A-Za-z0-9 _'\-]+)\s*\|\s*\d{2}:\d{2}\s*\|/g)];
-        for (const match of matches) {
-            const rsn = match[1].trim().replace(/^Late\s*/i, '').replace(/^-\s*/i, '').trim();
-            if (!rsn || rsn.toLowerCase() === 'name') continue;
-            const guildMember = interaction.guild.members.cache.find(m => {
-                const nick = (m.nickname || m.displayName || '').toLowerCase();
-                return nick === rsn.toLowerCase();
-            });
-            if (guildMember) {
-                recordAttendance(guildMember.id, rsn, eventDate, eventName);
-                recorded.push(rsn);
-            } else {
-                notFound.push(rsn);
-            }
-        }
-        let response = `✅ **Attendance recorded for ${eventDate} — ${eventName}**\n`;
-        response += `👥 **${recorded.length} member(s) credited:** ${recorded.join(', ') || 'None'}\n`;
-        if (notFound.length > 0) response += `⚠️ **Could not find (nickname mismatch?):** ${notFound.join(', ')}`;
-        await interaction.reply({ content: response, ephemeral: true });
+        pendingAttendance.set(interaction.user.id, { raw });
+
+        const modal = new ModalBuilder().setCustomId('attendance_event_modal').setTitle('Name This Event');
+        const eventInput = new TextInputBuilder()
+            .setCustomId('event_name')
+            .setLabel('What event was this?')
+            .setStyle(TextInputStyle.Short)
+            .setPlaceholder('e.g. Raid Night, SotW Week 3, BotW')
+            .setRequired(true);
+        modal.addComponents(new ActionRowBuilder().addComponents(eventInput));
+        await interaction.showModal(modal);
         return;
     }
 
@@ -699,10 +700,7 @@ client.on('interactionCreate', async interaction => {
         const rsn = target.nickname || target.displayName || target.user.username;
         const eventDate = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
         recordAttendance(target.id, rsn, eventDate, eventName);
-        await interaction.reply({
-            content: `✅ Manually added 1 attendance credit for **${rsn}** — ${eventName} on ${eventDate}.`,
-            ephemeral: true
-        });
+        await interaction.reply({ content: `✅ Manually added 1 attendance credit for **${rsn}** — ${eventName} on ${eventDate}.`, ephemeral: true });
         return;
     }
 
@@ -720,10 +718,7 @@ client.on('interactionCreate', async interaction => {
             return;
         }
         removeMostRecentAttendance(target.id);
-        await interaction.reply({
-            content: `✅ Removed the most recent attendance entry for **${rsn}**. They now have **${rows.length - 1}** event(s) on record.`,
-            ephemeral: true
-        });
+        await interaction.reply({ content: `✅ Removed the most recent attendance entry for **${rsn}**. They now have **${rows.length - 1}** event(s) on record.`, ephemeral: true });
         return;
     }
 
@@ -738,10 +733,7 @@ client.on('interactionCreate', async interaction => {
         const recruitRsn = recruit.nickname || recruit.displayName || recruit.user.username;
         const recruiterRsn = recruiter.nickname || recruiter.displayName || recruiter.user.username;
         addRecruit(recruiter.id, recruit.id, recruitRsn);
-        await interaction.reply({
-            content: `✅ **${recruitRsn}** has been added to **${recruiterRsn}**'s recruit list.`,
-            ephemeral: true
-        });
+        await interaction.reply({ content: `✅ **${recruitRsn}** has been added to **${recruiterRsn}**'s recruit list.`, ephemeral: true });
         return;
     }
 
@@ -761,10 +753,20 @@ client.on('interactionCreate', async interaction => {
         const recruiterMember = interaction.guild.members.cache.get(recruiterId);
         const recruiterRsn = recruiterMember ? (recruiterMember.nickname || recruiterMember.displayName) : 'Unknown';
         removeRecruit(recruit.id);
-        await interaction.reply({
-            content: `✅ **${recruitRsn}** has been removed from **${recruiterRsn}**'s recruit list.`,
-            ephemeral: true
-        });
+        await interaction.reply({ content: `✅ **${recruitRsn}** has been removed from **${recruiterRsn}**'s recruit list.`, ephemeral: true });
+        return;
+    }
+
+    if (interaction.commandName === 'eventattendance') {
+        const target = interaction.options.getMember('member') || interaction.member;
+        const rsn = target.nickname || target.displayName || target.user.username;
+        const rows = getAttendance(target.id);
+        if (rows.length === 0) {
+            await interaction.reply({ content: `📋 **${rsn}** has no recorded event attendance yet.` });
+            return;
+        }
+        const eventList = rows.map((r, i) => `${i + 1}. ${r.event_date} — ${r.event_name}`).join('\n');
+        await interaction.reply({ content: `📋 **Event Attendance for ${rsn}**\n**Total: ${rows.length}**\n\n${eventList}` });
         return;
     }
 
@@ -788,15 +790,34 @@ client.on('interactionCreate', async interaction => {
             ? recruitRows.map(r => `• ${r.recruit_rsn}`).join('\n')
             : 'No recruits yet.';
 
+        function boxRow(label1, val1, label2, val2) {
+            const w = 16;
+            const pad = (s, n) => { s = String(s); return s.padStart(Math.floor((n + s.length) / 2)).padEnd(n); };
+            const l1 = label1.padEnd(w + 2);
+            const l2 = label2.padEnd(w + 2);
+            const v1 = pad(val1, w);
+            const v2 = pad(val2, w);
+            const bar = '\u2500'.repeat(w);
+            return [
+                `  ${l1}   ${l2}`,
+                `  \u250c${bar}\u2510   \u250c${bar}\u2510`,
+                `  \u2502${v1}\u2502   \u2502${v2}\u2502`,
+                `  \u2514${bar}\u2518   \u2514${bar}\u2518`,
+            ].join('\n');
+        }
+
+        const statsBlock = [
+            boxRow('📅 Days in Clan', `${daysInClan} days`, '📋 Events Attended', `${attendanceRows.length}`),
+            '',
+            boxRow('👥 Recruits', `${recruitRows.length}`, '💰 Total Donated', totalDonated > 0 ? format(totalDonated) : '0gp'),
+        ].join('\n');
+
         const embed = new EmbedBuilder()
             .setColor(ASTRAL_BLUE)
             .setTitle(`${rsn}'s Clan Profile`)
             .setThumbnail(target.user.displayAvatarURL({ dynamic: true }))
+            .setDescription('```\n' + statsBlock + '\n```')
             .addFields(
-                { name: '📅 Days in Clan', value: `${daysInClan} days`, inline: true },
-                { name: '📋 Events Attended', value: `${attendanceRows.length}`, inline: true },
-                { name: '👥 Recruits', value: `${recruitRows.length}`, inline: true },
-                { name: `${COIN} Total Donated`, value: totalDonated > 0 ? format(totalDonated) : '0gp', inline: true },
                 { name: '📜 Attendance History (Last 10)', value: attendanceList, inline: false },
                 { name: '🎯 Recruited Members', value: recruitList, inline: false }
             )
@@ -818,13 +839,13 @@ client.on('interactionCreate', async interaction => {
             return;
         }
         const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('create_lfg').setLabel('Create LFG').setStyle(ButtonStyle.Success)
+            new ButtonBuilder().setCustomId('create_lfg').setLabel('⚔️ Create LFG').setStyle(ButtonStyle.Success)
         );
         const embed = new EmbedBuilder()
             .setColor(ASTRAL_BLUE)
-            .setTitle("Astral Group Finder")
-            .setDescription(`Create a group for **PvM** or **minigame** content.\n\nPress **Create LFG** below to start a group event.`)
-            .setFooter({ text: "Astral Clan Event System" });
+            .setTitle("⚔️ Astral Group Finder")
+            .setDescription(`Find others to group with for **PvM** or **minigame** content.\n\nPress **Create LFG** below to post a group event and ping interested members.`)
+            .setFooter({ text: "Astral Clan • Groups auto-delete after 3 hours" });
         await interaction.reply({ content: "LFG control panel created.", ephemeral: true });
         await interaction.channel.send({ embeds: [embed], components: [row] });
         return;
@@ -833,10 +854,7 @@ client.on('interactionCreate', async interaction => {
 
 (async () => {
     try {
-        await rest.put(
-            Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
-            { body: commands }
-        );
+        await rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), { body: commands });
         await client.login(TOKEN);
     } catch (err) {
         console.error(err);
