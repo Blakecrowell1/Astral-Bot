@@ -513,9 +513,7 @@ client.on('interactionCreate', async interaction => {
             );
 
             await interaction.reply({
-                content: '🏆 **WOM Competition — Select Event Type**
-
-What type of competition was this?',
+                content: '🏆 **WOM Competition — Select Event Type**\n\nWhat type of competition was this?',
                 components: [row],
                 ephemeral: true
             });
