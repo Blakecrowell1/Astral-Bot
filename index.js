@@ -1201,7 +1201,7 @@ client.on('interactionCreate', async interaction => {
             return;
         }
 
-        await interaction.reply({ content: "🔍 Running rank check on all members...", ephemeral: true });
+        await interaction.deferReply({ ephemeral: true });
 
         const guild = interaction.guild;
         const members = await guild.members.fetch();
