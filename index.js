@@ -48,6 +48,19 @@ const RECRUIT_CHANNEL_ID = "1479812369889624345";
 const STAFF_ROLE_ID = "1480285731955019806";
 const LEADERSHIP_ROLE_ID = "1479585915037941872";
 const BOT_COMMANDS_CHANNEL_ID = "1508520980035801169";
+const STAFF_CHANNEL_ID = "1479596129070092419";
+
+const RANKS = [
+    { name: 'Sapphire', emoji: '💙', roleId: '1479586165337100460', days: 0, events: 0, recruits: 0, donation: 0 },
+    { name: 'Emerald', emoji: '💚', roleId: '1479586183326732419', days: 7, events: 0, recruits: 0, donation: 0 },
+    { name: 'Ruby', emoji: '❤️', roleId: '1479586209348190310', days: 21, events: 1, recruits: 2, donation: 10000000 },
+    { name: 'Diamond', emoji: '🩶', roleId: '1479586237529460836', days: 45, events: 3, recruits: 3, donation: 50000000 },
+    { name: 'Dragonstone', emoji: '💜', roleId: '1479589320913457167', days: 90, events: 5, recruits: 5, donation: 100000000 },
+    { name: 'Onyx', emoji: '🖤', roleId: '1479586258316693677', days: 200, events: 10, recruits: 10, donation: 150000000 },
+    { name: 'Zenyte', emoji: '🧡', roleId: '1479586280856752148', days: 365, events: 15, recruits: 10, donation: 250000000 },
+];
+
+const RANK_ROLE_IDS = RANKS.map(r => r.roleId);
 const ATTENDANCE_CHANNEL_ID = "1510339026446712982";
 const EVENT_LOG_CHANNEL_ID = "1510339149851394229";
 const EVENT_STAFF_ROLE_ID = "1479806170943328289";
@@ -203,6 +216,80 @@ async function postCommandsList(client) {
         console.log("Posted commands list.");
     } catch (err) {
         console.log("Could not post commands list:", err.message);
+    }
+}
+
+function getMemberCurrentRank(member) {
+    for (let i = RANKS.length - 1; i >= 0; i--) {
+        if (member.roles.cache.has(RANKS[i].roleId)) {
+            return i;
+        }
+    }
+    return 0;
+}
+
+function meetsNextRankRequirements(daysInClan, events, recruits, totalDonated, rankIndex) {
+    const rank = RANKS[rankIndex];
+    const meetsBase = daysInClan >= rank.days && events >= rank.events;
+    const meetsRecruitsOrDonation = recruits >= rank.recruits || totalDonated >= rank.donation;
+    if (rank.recruits === 0 && rank.donation === 0) return meetsBase;
+    return meetsBase && meetsRecruitsOrDonation;
+}
+
+async function checkMemberRank(guild, discordId) {
+    try {
+        const member = await guild.members.fetch(discordId);
+        if (!member) return;
+        if (!member.roles.cache.has(MEMBER_ROLE_ID)) return;
+        if (member.roles.cache.has(LEADERSHIP_ROLE_ID)) return;
+
+        const currentRankIndex = getMemberCurrentRank(member);
+        if (currentRankIndex >= RANKS.length - 1) return;
+
+        const nextRankIndex = currentRankIndex + 1;
+        const nextRank = RANKS[nextRankIndex];
+
+        const joinedAt = member.joinedAt;
+        const now = new Date();
+        const daysInClan = joinedAt ? Math.floor((now - joinedAt) / (1000 * 60 * 60 * 24)) : 0;
+        const attendanceRows = getAttendance(discordId);
+        const recruitRows = getRecruits(discordId);
+        const totalDonated = getTotalDonations(discordId);
+
+        if (meetsNextRankRequirements(daysInClan, attendanceRows.length, recruitRows.length, totalDonated, nextRankIndex)) {
+            const currentRank = RANKS[currentRankIndex];
+            const rsn = member.nickname || member.displayName || member.user.username;
+
+            const staffChannel = await guild.channels.fetch(STAFF_CHANNEL_ID);
+            if (!staffChannel || staffChannel.type !== ChannelType.GuildText) return;
+
+            const embed = new EmbedBuilder()
+                .setColor(ASTRAL_BLUE)
+                .setTitle('🎉 Rank Up Available!')
+                .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
+                .setDescription(`**${rsn}** is eligible for a rank promotion!`)
+                .addFields(
+                    { name: 'Current Rank', value: `${currentRank.emoji} ${currentRank.name}`, inline: true },
+                    { name: 'Next Rank', value: `${nextRank.emoji} ${nextRank.name}`, inline: true },
+                    { name: '📅 Days in Clan', value: `${daysInClan}`, inline: true },
+                    { name: '📋 Events Attended', value: `${attendanceRows.length}`, inline: true },
+                    { name: '👥 Recruits', value: `${recruitRows.length}`, inline: true },
+                    { name: '💰 Total Donated', value: format(totalDonated), inline: true },
+                )
+                .setFooter({ text: 'Click the button below once the rank has been updated' })
+                .setTimestamp();
+
+            const row = new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId(`rank_updated_${discordId}`)
+                    .setLabel('✅ Rank Updated')
+                    .setStyle(ButtonStyle.Success)
+            );
+
+            await staffChannel.send({ embeds: [embed], components: [row] });
+        }
+    } catch (err) {
+        console.log("Rank check error:", err.message);
     }
 }
 
@@ -421,6 +508,10 @@ const commands = [
         .addUserOption(o => o.setName('member').setDescription('Member to update (Leadership only)').setRequired(false)),
 
     new SlashCommandBuilder()
+        .setName('checkranks')
+        .setDescription('Check all members for rank eligibility and post results to staff chat'),
+
+    new SlashCommandBuilder()
         .setName('adddonation')
         .setDescription('Manually add a donation credit for a member (Leadership only)')
         .addUserOption(o => o.setName('member').setDescription('The member to credit').setRequired(true))
@@ -511,6 +602,19 @@ client.on('interactionCreate', async interaction => {
             );
 
             await interaction.showModal(modal);
+            return;
+        }
+
+        if (interaction.customId.startsWith('rank_updated_')) {
+            const discordId = interaction.customId.replace('rank_updated_', '');
+            const actioner = interaction.member.nickname || interaction.member.displayName || interaction.user.username;
+
+            const updatedEmbed = EmbedBuilder.from(interaction.message.embeds[0])
+                .setColor(0x57F287)
+                .setFooter({ text: `Rank updated by ${actioner}` })
+                .setTimestamp();
+
+            await interaction.update({ embeds: [updatedEmbed], components: [] });
             return;
         }
 
@@ -754,6 +858,14 @@ client.on('interactionCreate', async interaction => {
             }
 
             await interaction.reply({ content: `✅ Attendance recorded successfully!`, ephemeral: true });
+
+            // Check rank eligibility for all credited members
+            for (const match of recorded) {
+                const guildMember = interaction.guild.members.cache.find(m =>
+                    (m.nickname || m.displayName || '').toLowerCase() === match.toLowerCase()
+                );
+                if (guildMember) await checkMemberRank(interaction.guild, guildMember.id);
+            }
 
             // Post results embed to event log channel
             try {
@@ -1005,6 +1117,7 @@ client.on('interactionCreate', async interaction => {
         const recruiterRsn = recruiter.nickname || recruiter.displayName || recruiter.user.username;
         addRecruit(recruiter.id, recruit.id, recruitRsn);
         await interaction.reply({ content: `✅ **${recruitRsn}** has been added to **${recruiterRsn}**'s recruit list.`, ephemeral: true });
+        await checkMemberRank(interaction.guild, recruiter.id);
         return;
     }
 
@@ -1082,6 +1195,77 @@ client.on('interactionCreate', async interaction => {
         return;
     }
 
+    if (interaction.commandName === 'checkranks') {
+        if (interaction.user.id !== OWNER_ID) {
+            await interaction.reply({ content: "Only Raleigh can run rank checks.", ephemeral: true });
+            return;
+        }
+
+        await interaction.reply({ content: "🔍 Running rank check on all members...", ephemeral: true });
+
+        const guild = interaction.guild;
+        const members = await guild.members.fetch();
+        let checked = 0;
+        let eligible = 0;
+
+        for (const [id, member] of members) {
+            if (!member.roles.cache.has(MEMBER_ROLE_ID)) continue;
+            if (member.roles.cache.has(LEADERSHIP_ROLE_ID)) continue;
+            if (member.user.bot) continue;
+
+            const currentRankIndex = getMemberCurrentRank(member);
+            if (currentRankIndex >= RANKS.length - 1) continue;
+
+            const nextRankIndex = currentRankIndex + 1;
+            const joinedAt = member.joinedAt;
+            const now = new Date();
+            const daysInClan = joinedAt ? Math.floor((now - joinedAt) / (1000 * 60 * 60 * 24)) : 0;
+            const attendanceRows = getAttendance(id);
+            const recruitRows = getRecruits(id);
+            const totalDonated = getTotalDonations(id);
+
+            checked++;
+
+            if (meetsNextRankRequirements(daysInClan, attendanceRows.length, recruitRows.length, totalDonated, nextRankIndex)) {
+                eligible++;
+                const currentRank = RANKS[currentRankIndex];
+                const nextRank = RANKS[nextRankIndex];
+                const rsn = member.nickname || member.displayName || member.user.username;
+
+                const staffChannel = await guild.channels.fetch(STAFF_CHANNEL_ID);
+                if (!staffChannel || staffChannel.type !== ChannelType.GuildText) continue;
+
+                const embed = new EmbedBuilder()
+                    .setColor(ASTRAL_BLUE)
+                    .setTitle('🎉 Rank Up Available!')
+                    .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
+                    .setDescription(`**${rsn}** is eligible for a rank promotion!`)
+                    .addFields(
+                        { name: 'Current Rank', value: `${currentRank.emoji} ${currentRank.name}`, inline: true },
+                        { name: 'Next Rank', value: `${nextRank.emoji} ${nextRank.name}`, inline: true },
+                        { name: '📅 Days in Clan', value: `${daysInClan}`, inline: true },
+                        { name: '📋 Events Attended', value: `${attendanceRows.length}`, inline: true },
+                        { name: '👥 Recruits', value: `${recruitRows.length}`, inline: true },
+                        { name: '💰 Total Donated', value: format(totalDonated), inline: true },
+                    )
+                    .setFooter({ text: 'Click the button below once the rank has been updated' })
+                    .setTimestamp();
+
+                const row = new ActionRowBuilder().addComponents(
+                    new ButtonBuilder()
+                        .setCustomId(`rank_updated_${id}`)
+                        .setLabel('✅ Rank Updated')
+                        .setStyle(ButtonStyle.Success)
+                );
+
+                await staffChannel.send({ embeds: [embed], components: [row] });
+            }
+        }
+
+        await interaction.editReply({ content: `✅ Rank check complete! Checked **${checked}** members, found **${eligible}** eligible for promotion.` });
+        return;
+    }
+
     if (interaction.commandName === 'adddonation') {
         if (!interaction.member.roles.cache.has(LEADERSHIP_ROLE_ID)) {
             await interaction.reply({ content: "Only leadership can manually add donations.", ephemeral: true });
@@ -1097,6 +1281,7 @@ client.on('interactionCreate', async interaction => {
         recordDonation(target.id, rsn, amount);
         const newTotal = getTotalDonations(target.id);
         await interaction.reply({ content: `✅ Added **${format(amount)}** donation credit for **${rsn}**. Their total is now **${format(newTotal)}**.`, ephemeral: true });
+        await checkMemberRank(interaction.guild, target.id);
         return;
     }
 
