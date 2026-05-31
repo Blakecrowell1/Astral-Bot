@@ -296,8 +296,10 @@ function buildLfgPanelComponents(userId) {
             .setCustomId('lfg_time')
             .setPlaceholder('Choose Start Time')
             .addOptions(
-                { label: 'Now', value: 'Now' }, { label: '15 Minutes', value: '15 Minutes' },
-                { label: '30 Minutes', value: '30 Minutes' }, { label: '1 Hour', value: '1 Hour' }
+                { label: '15 Minutes', value: '15 Minutes' },
+                { label: '30 Minutes', value: '30 Minutes' },
+                { label: '1 Hour', value: '1 Hour' },
+                { label: '2 Hours', value: '2 Hours' }
             )
     );
 
@@ -312,10 +314,10 @@ function buildLfgPanelComponents(userId) {
 
 function buildStartTimeText(startTime) {
     const now = Math.floor(Date.now() / 1000);
-    if (startTime === "Now") return `<t:${now}:t> • <t:${now}:R>`;
     if (startTime === "15 Minutes") { const ts = now + 900; return `<t:${ts}:t> • <t:${ts}:R>`; }
     if (startTime === "30 Minutes") { const ts = now + 1800; return `<t:${ts}:t> • <t:${ts}:R>`; }
     if (startTime === "1 Hour") { const ts = now + 3600; return `<t:${ts}:t> • <t:${ts}:R>`; }
+    if (startTime === "2 Hours") { const ts = now + 7200; return `<t:${ts}:t> • <t:${ts}:R>`; }
     return startTime;
 }
 
