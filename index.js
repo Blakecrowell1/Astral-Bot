@@ -33,7 +33,10 @@ const {
     getCofferMessageId,
     setCofferMessageId,
     updateRSN,
-    removeDonation
+    removeDonation,
+    hasBeenNotified,
+    markNotified,
+    clearNotification
 } = require('./database');
 
 const TOKEN = process.env.TOKEN;
@@ -49,6 +52,7 @@ const STAFF_ROLE_ID = "1480285731955019806";
 const LEADERSHIP_ROLE_ID = "1479585915037941872";
 const BOT_COMMANDS_CHANNEL_ID = "1508520980035801169";
 const STAFF_CHANNEL_ID = "1479596129070092419";
+const STAFF_ANNOUNCEMENTS_ID = "1480225254944149744";
 
 const RANKS = [
     { name: 'Sapphire', emoji: '💙', roleId: '1479586165337100460', days: 0, events: 0, recruits: 0, donation: 0 },
@@ -260,7 +264,7 @@ async function checkMemberRank(guild, discordId) {
             const currentRank = RANKS[currentRankIndex];
             const rsn = member.nickname || member.displayName || member.user.username;
 
-            const staffChannel = await guild.channels.fetch(STAFF_CHANNEL_ID);
+            const staffChannel = await guild.channels.fetch(STAFF_ANNOUNCEMENTS_ID);
             if (!staffChannel || staffChannel.type !== ChannelType.GuildText) return;
 
             const embed = new EmbedBuilder()
@@ -281,7 +285,7 @@ async function checkMemberRank(guild, discordId) {
 
             const row = new ActionRowBuilder().addComponents(
                 new ButtonBuilder()
-                    .setCustomId(`rank_updated_${discordId}`)
+                    .setCustomId(`rank_updated_${discordId}_${nextRank.name}`)
                     .setLabel('✅ Rank Updated')
                     .setStyle(ButtonStyle.Success)
             );
@@ -542,6 +546,31 @@ client.once('ready', async () => {
 
 client.on('guildMemberAdd', async () => {});
 
+// Daily rank check — runs every 24 hours
+async function runDailyRankCheck() {
+    try {
+        console.log("Running daily rank check...");
+        const guild = await client.guilds.fetch(GUILD_ID);
+        const members = await guild.members.fetch();
+        let checked = 0;
+
+        for (const [id, member] of members) {
+            if (!member.roles.cache.has(MEMBER_ROLE_ID)) continue;
+            if (member.roles.cache.has(LEADERSHIP_ROLE_ID)) continue;
+            if (member.user.bot) continue;
+            await checkMemberRank(guild, id);
+            checked++;
+        }
+
+        console.log(`Daily rank check complete. Checked ${checked} members.`);
+    } catch (err) {
+        console.log("Daily rank check error:", err.message);
+    }
+}
+
+// Run daily rank check every 24 hours
+setInterval(runDailyRankCheck, 24 * 60 * 60 * 1000);
+
 client.on('guildMemberRemove', async (member) => {
     try {
         deleteAttendance(member.id);
@@ -606,8 +635,14 @@ client.on('interactionCreate', async interaction => {
         }
 
         if (interaction.customId.startsWith('rank_updated_')) {
-            const discordId = interaction.customId.replace('rank_updated_', '');
+            const parts = interaction.customId.split('_');
+            // Format: rank_updated_DISCORDID_RANKNAME
+            const discordId = parts[2];
+            const rankName = parts.slice(3).join('_');
             const actioner = interaction.member.nickname || interaction.member.displayName || interaction.user.username;
+
+            // Clear notification so they can be notified for next rank up
+            clearNotification(discordId, rankName);
 
             const updatedEmbed = EmbedBuilder.from(interaction.message.embeds[0])
                 .setColor(0x57F287)
@@ -1232,7 +1267,7 @@ client.on('interactionCreate', async interaction => {
                 const nextRank = RANKS[nextRankIndex];
                 const rsn = member.nickname || member.displayName || member.user.username;
 
-                const staffChannel = await guild.channels.fetch(STAFF_CHANNEL_ID);
+                const staffChannel = await guild.channels.fetch(STAFF_ANNOUNCEMENTS_ID);
                 if (!staffChannel || staffChannel.type !== ChannelType.GuildText) continue;
 
                 const embed = new EmbedBuilder()

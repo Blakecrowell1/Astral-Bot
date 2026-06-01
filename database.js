@@ -61,6 +61,15 @@ async function initDB() {
     // Ensure coffer row exists
     db.run(`INSERT OR IGNORE INTO coffer (id, total) VALUES (1, 0)`);
 
+    db.run(`
+        CREATE TABLE IF NOT EXISTS rank_notifications (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            discord_id TEXT NOT NULL,
+            rank_name TEXT NOT NULL,
+            UNIQUE(discord_id, rank_name)
+        )
+    `);
+
     // Add event_name column if it doesn't exist (for existing databases)
     try {
         db.run(`ALTER TABLE attendance ADD COLUMN event_name TEXT NOT NULL DEFAULT 'Event'`);
@@ -186,6 +195,30 @@ function removeDonation(discordId, amount) {
     saveDB();
 }
 
+function hasBeenNotified(discordId, rankName) {
+    const result = db.exec(
+        `SELECT id FROM rank_notifications WHERE discord_id = ? AND rank_name = ?`,
+        [discordId, rankName]
+    );
+    return result.length > 0 && result[0].values.length > 0;
+}
+
+function markNotified(discordId, rankName) {
+    db.run(
+        `INSERT OR IGNORE INTO rank_notifications (discord_id, rank_name) VALUES (?, ?)`,
+        [discordId, rankName]
+    );
+    saveDB();
+}
+
+function clearNotification(discordId, rankName) {
+    db.run(
+        `DELETE FROM rank_notifications WHERE discord_id = ? AND rank_name = ?`,
+        [discordId, rankName]
+    );
+    saveDB();
+}
+
 function updateRSN(discordId, newRsn) {
     db.run(`UPDATE attendance SET rsn = ? WHERE discord_id = ?`, [newRsn, discordId]);
     db.run(`UPDATE recruits SET recruit_rsn = ? WHERE recruit_id = ?`, [newRsn, discordId]);
@@ -210,5 +243,8 @@ module.exports = {
     getCofferMessageId,
     setCofferMessageId,
     updateRSN,
-    removeDonation
+    removeDonation,
+    hasBeenNotified,
+    markNotified,
+    clearNotification
 };
